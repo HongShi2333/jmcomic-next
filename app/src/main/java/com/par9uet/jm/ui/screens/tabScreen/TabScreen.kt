@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.par9uet.jm.ui.screens.HomeScreen
 import com.par9uet.jm.ui.screens.UserScreen
+import com.par9uet.jm.ui.screens.AiChatScreen
 
 @Composable
 fun TabScreen(tabName: String) {
@@ -37,6 +38,9 @@ fun TabScreen(tabName: String) {
                 }
                 composable("user") {
                     UserScreen()
+                }
+                composable("ai") {
+                    AiChatScreen()
                 }
             }
         }

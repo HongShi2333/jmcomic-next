@@ -15,16 +15,17 @@ val versionProps = Properties().apply {
 }
 
 val versionCodeProp = versionProps.getProperty("VERSION_CODE", "1").toIntOrNull()
-val versionNameProp: String = versionProps.getProperty("VERSION_NAME", "1.0.0")
+val versionNameProp: String = versionProps.getProperty("VERSION_NAME", "1.1.0")
 
 fun getGitHash() = providers
     .exec {
         commandLine("git", "rev-parse", "--short", "HEAD")
+        isIgnoreExitValue = true
     }
     .standardOutput
     .asText
     .map {
-        it.trim()
+        it.trim().ifBlank { "unknown" }
     }
     .getOrElse("unknown")
 
@@ -43,7 +44,7 @@ androidComponents {
 
 kotlin {
     compilerOptions {
-        jvmTarget = JvmTarget.JVM_25
+        jvmTarget = JvmTarget.JVM_17
     }
 }
 
@@ -52,9 +53,10 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.par9uet.jm"
-        minSdk = 31
-        targetSdk = 36
+        applicationId = "jmcomicoi.net"
+        // Android 6.0 Marshmallow is API 23.
+        minSdk = 23
+        targetSdk = 35
         versionCode = versionCodeProp
         versionName = versionNameProp
 
@@ -68,23 +70,17 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
     }
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("arm64-v8a")
-            isUniversalApk = false
-        }
-    }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_25
-        targetCompatibility = JavaVersion.VERSION_25
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -99,6 +95,7 @@ android {
 composeCompiler {}
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.androidx.work.runtime.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.core.ktx)
@@ -114,7 +111,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.gson)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.google.fonts)
     implementation(libs.coil.compose)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)

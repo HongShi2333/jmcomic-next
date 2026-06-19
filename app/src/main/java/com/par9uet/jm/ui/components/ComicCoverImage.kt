@@ -13,6 +13,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.ImageLoader
@@ -32,24 +33,25 @@ fun ComicCoverImage(
     Box(modifier = Modifier.fillMaxWidth()) {
         AsyncImage(
             model = "${remoteSetting.imgHost}/media/albums/${comic.id}_3x4.jpg",
-//            model = "https://i0.hdslb.com/bfs/manga-static/c62668e300b5212fe5504f6fa9b4b5c630f8ebeb.jpg@310w.avif",
             imageLoader = imageLoader,
             contentDescription = "${comic.name}的封面",
-            contentScale = ContentScale.FillBounds,
+            contentScale = ContentScale.Crop,
             modifier = Modifier
                 .aspectRatio(3f / 4f)
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium),
         )
         if (showIdChip) {
             AssistChip(
                 border = null,
                 colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    labelColor = MaterialTheme.colorScheme.onSurface,
                 ),
-                modifier = Modifier.align(Alignment.TopEnd).padding(end = 10.dp, top = 10.dp),
-                onClick = {
-
-                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 10.dp, top = 10.dp),
+                onClick = {},
                 label = {
                     Text("JM${comic.id}")
                 }

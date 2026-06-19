@@ -21,6 +21,7 @@ import coil.request.ImageRequest
 import coil.request.SuccessResult
 import coil.size.Size
 import com.par9uet.jm.cache.getCommonPicDecodeCacheDir
+import com.par9uet.jm.utils.compressWebpCompat
 import com.par9uet.jm.utils.md5
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -79,8 +80,9 @@ class ComicPicImageState(
         }
 
         // 加载原始图片
+        val imageData = File(originSrc).takeIf { it.exists() } ?: originSrc
         val request = ImageRequest.Builder(context)
-            .data(originSrc)
+            .data(imageData)
             // 这里必须使用原始 size ，不然解密会有问题，出现白线
             .size { Size.ORIGINAL }
             .allowHardware(false)
@@ -175,7 +177,7 @@ class ComicPicImageState(
     private suspend fun saveBitmapAsWebp(bitmap: Bitmap, file: File) {
         withContext(Dispatchers.IO) {
             FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 50, out)
+                bitmap.compressWebpCompat(50, out)
             }
         }
     }

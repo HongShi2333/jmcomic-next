@@ -34,7 +34,10 @@ fun CommonScaffold(
                 TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
             TopAppBar(
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
                 ),
                 navigationIcon = {
                     IconButton(onClick = {
@@ -43,14 +46,12 @@ fun CommonScaffold(
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回上一页",
-                            tint = MaterialTheme.colorScheme.surface,
                         )
                     }
                 },
                 title = {
                     Text(
                         title,
-                        color = MaterialTheme.colorScheme.surface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

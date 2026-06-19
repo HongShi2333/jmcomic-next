@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.par9uet.jm.ui.screens.downloadScreen.DownloadScreen
+import com.par9uet.jm.ui.screens.downloadScreen.DownloadComicDetailScreen
 import com.par9uet.jm.ui.screens.readScreen.ComicReadScreen
 import com.par9uet.jm.ui.screens.tabScreen.TabScreen
 import com.par9uet.jm.ui.viewModel.ComicViewModel
@@ -115,6 +116,24 @@ fun AppScreen(
             }
             composable(route = "sign") { SignInScreen() }
             composable(route = "download") { DownloadScreen() }
+            composable(
+                route = "downloadComicDetail/{id}",
+                arguments = listOf(
+                    navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
+                ),
+            ) { backStackEntry ->
+                val id = backStackEntry.arguments?.getInt("id") ?: -1
+                DownloadComicDetailScreen(id = id)
+            }
+            composable(
+                route = "localComicRead/{id}",
+                arguments = listOf(
+                    navArgument(name = "id") { type = NavType.IntType; defaultValue = -1 }
+                ),
+            ) { backStackEntry ->
+                val id = backStackEntry.arguments?.getInt("id") ?: -1
+                ComicReadScreen(comicId = id, localOnly = true)
+            }
         }
     }
 }

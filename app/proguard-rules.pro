@@ -1,51 +1,60 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Project ProGuard / R8 rules.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
-
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
-
-# Retrofit 2 基础规则
+# Keep metadata needed by Retrofit, Gson, Koin, Room, and suspend functions.
 -keepattributes Signature
 -keepattributes *Annotation*
 -keepattributes RuntimeVisibleAnnotations
 -keepattributes RuntimeInvisibleAnnotations
 -keepattributes EnclosingMethod
+-keepattributes InnerClasses
 
-# Retrofit 接口
+-keep class kotlin.Metadata { *; }
+-keep class kotlinx.coroutines.** { *; }
+-dontwarn kotlinx.coroutines.**
+
+# Retrofit interfaces and annotations must stay visible to runtime parsing.
 -keep class retrofit2.** { *; }
--dontwarn retrofit2.**
-
-# 保持所有 Retrofit 接口不被混淆
 -keep interface * extends retrofit2.Call
-
-# 保持 Retrofit 注解类
 -keepclasseswithmembers class * {
     @retrofit2.http.* <methods>;
 }
+-dontwarn retrofit2.**
+-dontwarn javax.annotation.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**
 
-# 保持所有数据模型类（根据你的包结构调整）
+# Network response models are deserialized through Gson/Retrofit.
 -keep class com.par9uet.jm.retrofit.model.** { *; }
 -keepclassmembers class com.par9uet.jm.retrofit.model.** {
     *;
 }
 
-# 或者使用更通用的规则（如果你使用 Gson/Jackson 等）
+# Gson is also used for persisted local data. Keep field names so existing
+# installed data and API JSON remain compatible after R8 obfuscation.
+-keep class com.par9uet.jm.data.models.** { *; }
+-keep class com.par9uet.jm.database.model.** { *; }
+-keep class com.par9uet.jm.ui.models.** { *; }
+-keep class com.par9uet.jm.task.AppTaskInfo { *; }
 -keepclassmembers,allowobfuscation class * {
     @com.google.gson.annotations.SerializedName <fields>;
 }
+
+# Room and WorkManager rely on generated/runtime-discovered classes in release.
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep class com.par9uet.jm.database.** { *; }
+-keep class com.par9uet.jm.worker.** { *; }
+-keep class * extends androidx.work.ListenableWorker { *; }
+-dontwarn androidx.room.**
+-dontwarn androidx.work.**
+
+# Koin resolves definitions and the WorkManager factory at runtime.
+-keep class org.koin.** { *; }
+-keep class com.par9uet.jm.di.** { *; }
+-keep class com.par9uet.jm.store.** { *; }
+-keep class com.par9uet.jm.repository.** { *; }
+-keep class com.par9uet.jm.storage.** { *; }
+-keep class com.par9uet.jm.JmApplication { *; }
+-dontwarn org.koin.**
+
+# OkHttp cookies are persisted with Gson.
+-keep class okhttp3.Cookie { *; }
+-dontwarn okhttp3.**

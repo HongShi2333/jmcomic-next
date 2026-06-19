@@ -7,7 +7,7 @@ import com.par9uet.jm.database.converter.ListStringToStringConverter
 import com.par9uet.jm.database.dao.DownloadComicDao
 import com.par9uet.jm.database.model.DownloadComic
 
-@Database(entities = [DownloadComic::class], version = 2)
+@Database(entities = [DownloadComic::class], version = 2, exportSchema = false)
 @TypeConverters(ListStringToStringConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun downloadComicDao(): DownloadComicDao

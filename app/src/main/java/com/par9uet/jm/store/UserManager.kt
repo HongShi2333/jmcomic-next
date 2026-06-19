@@ -72,13 +72,11 @@ class UserManager(
             }
 
             is NetWorkResult.Success<LoginResponse> -> {
-                _userState.update {
-                    it.copy(
-                        data = data.data.toUser(
-                            password = password
-                        )
+                updateUser(
+                    data.data.toUser(
+                        password = password
                     )
-                }
+                )
             }
         }
         _userState.update {

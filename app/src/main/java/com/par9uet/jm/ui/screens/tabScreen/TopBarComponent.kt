@@ -24,12 +24,13 @@ private fun HomeTopBarComponent() {
     val mainNavController = LocalMainNavController.current
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
         ),
         title = {
             Text(
                 "禁漫天堂",
-                color = MaterialTheme.colorScheme.surface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -40,8 +41,7 @@ private fun HomeTopBarComponent() {
             }) {
                 Icon(
                     Icons.Default.DateRange,
-                    "每周推荐",
-                    tint = MaterialTheme.colorScheme.surface
+                    contentDescription = "每周推荐",
                 )
             }
             IconButton(onClick = {
@@ -49,8 +49,7 @@ private fun HomeTopBarComponent() {
             }) {
                 Icon(
                     Icons.Default.Search,
-                    "搜索",
-                    tint = MaterialTheme.colorScheme.surface
+                    contentDescription = "搜索",
                 )
             }
         }
@@ -63,12 +62,13 @@ private fun UserTopBarComponent() {
     val mainNavController = LocalMainNavController.current
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
         ),
         title = {
             Text(
                 "个人中心",
-                color = MaterialTheme.colorScheme.surface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -79,8 +79,7 @@ private fun UserTopBarComponent() {
             }) {
                 Icon(
                     Icons.Default.Settings,
-                    "设置",
-                    tint = MaterialTheme.colorScheme.surface
+                    contentDescription = "设置",
                 )
             }
             IconButton(onClick = {
@@ -88,8 +87,7 @@ private fun UserTopBarComponent() {
             }) {
                 Icon(
                     Icons.Default.Download,
-                    "下载",
-                    tint = MaterialTheme.colorScheme.surface
+                    contentDescription = "下载",
                 )
             }
         }
@@ -104,8 +102,5 @@ fun TopBarComponent() {
     when (currentRoute) {
         "home" -> HomeTopBarComponent()
         "user" -> UserTopBarComponent()
-        else -> {
-            Text("none")
-        }
     }
 }

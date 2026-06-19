@@ -15,6 +15,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -39,6 +41,7 @@ import org.koin.androidx.compose.koinViewModel
 fun ComicScrollRead(
     lazyListState: LazyListState,
     pagerState: PagerState,
+    targetIndex: Int,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
     onUpdateSliderValue: (value: Float) -> Unit
 ) {
@@ -47,6 +50,18 @@ fun ComicScrollRead(
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
     val list = comicPicState.data ?: listOf()
     val context = LocalContext.current
+    var programmaticScroll by remember { mutableStateOf(false) }
+
+    LaunchedEffect(targetIndex, list.size) {
+        if (list.isEmpty()) return@LaunchedEffect
+        val target = targetIndex.coerceIn(0, list.lastIndex)
+        if (lazyListState.firstVisibleItemIndex != target) {
+            programmaticScroll = true
+            lazyListState.scrollToItem(target)
+            pagerState.scrollToPage(target)
+            programmaticScroll = false
+        }
+    }
 
     LaunchedEffect(lazyListState) {
         launch {
@@ -61,6 +76,7 @@ fun ComicScrollRead(
                 .distinctUntilChanged()
                 .debounce(1000)
                 .collect {
+                    if (programmaticScroll) return@collect
                     log("lazyListState.firstVisibleItemIndex currentIndexState = $currentIndexState it = $it")
                     if (currentIndexState != it) {
                         currentIndexState = it
@@ -80,11 +96,11 @@ fun ComicScrollRead(
                         // 1. 在 Initial 阶段观察按下，不消耗事件，确保 Pager 能收到
                         val down =
                             awaitFirstDown(
-                                requireUnconsumed = false,
-                                pass = PointerEventPass.Initial
+                                requireUnconsumed = true,
+                                pass = PointerEventPass.Final
                             )
                         // 2. 等待抬起
-                        val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                        val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
                         // 3. 判定逻辑：只有在没被消费（说明不是滑动）且距离很短时触发
                         if (up != null && !up.isConsumed) {
                             val distance = (up.position - down.position).getDistance()

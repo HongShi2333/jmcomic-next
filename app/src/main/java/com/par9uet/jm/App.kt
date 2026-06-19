@@ -45,7 +45,7 @@ fun App(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding() // 自动避开系统导航栏
+                .navigationBarsPadding()
                 .padding(bottom = 80.dp)
                 .imePadding()
         )

@@ -22,6 +22,24 @@ interface DownloadComicDao {
     @Query("SELECT * FROM download_comics WHERE status = 'complete' ORDER BY createTime DESC")
     fun getCompleteList(): PagingSource<Int, DownloadComic>
 
+    @Query("SELECT * FROM download_comics WHERE status = 'error' ORDER BY createTime DESC")
+    fun getErrorList(): PagingSource<Int, DownloadComic>
+
+    @Query("SELECT * FROM download_comics WHERE status IN ('pending', 'downloading', 'paused') ORDER BY createTime DESC")
+    fun getActiveList(): PagingSource<Int, DownloadComic>
+
+    @Query("SELECT * FROM download_comics WHERE status = 'complete' ORDER BY createTime DESC")
+    fun observeCompleteList(): Flow<List<DownloadComic>>
+
+    @Query("SELECT * FROM download_comics WHERE status IN ('pending', 'downloading', 'paused') ORDER BY createTime DESC")
+    fun observeActiveList(): Flow<List<DownloadComic>>
+
+    @Query("SELECT * FROM download_comics WHERE status = 'error' ORDER BY createTime DESC")
+    fun observeErrorList(): Flow<List<DownloadComic>>
+
+    @Query("SELECT * FROM download_comics WHERE id = :comicId LIMIT 1")
+    suspend fun getById(comicId: Int): DownloadComic?
+
     @Query("SELECT EXISTS(SELECT 1 FROM download_comics WHERE id = :comicId)")
     fun isExist(comicId: Int): Flow<Boolean>
 
@@ -45,4 +63,10 @@ interface DownloadComicDao {
 
     @Delete
     suspend fun delete(task: DownloadComic)
+
+    @Query("DELETE FROM download_comics WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Int>)
+
+    @Query("UPDATE download_comics SET status = :status WHERE id IN (:ids)")
+    suspend fun updateStatusByIds(ids: List<Int>, status: String)
 }

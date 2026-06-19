@@ -9,7 +9,10 @@ import coil.ImageLoader
 import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import androidx.compose.ui.graphics.asAndroidBitmap
 import com.par9uet.jm.cache.getDownloadDir
+import com.par9uet.jm.data.models.ComicPicImageState
+import com.par9uet.jm.data.models.ImageResultState
 import com.par9uet.jm.database.dao.DownloadComicDao
 import com.par9uet.jm.database.model.UpdateComicCover
 import com.par9uet.jm.database.model.UpdateComicProgress
@@ -21,6 +24,7 @@ import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.RemoteSettingManager
 import com.par9uet.jm.store.ToastManager
+import com.par9uet.jm.utils.compressWebpCompat
 import com.par9uet.jm.utils.tryCreateDir
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -80,6 +84,12 @@ class DownloadComicWorker(
             if (runAttemptCount < 3) {
                 Result.retry() // 如果失败了，系统会自动尝试重试
             } else {
+                downloadComicDao.updateStatus(
+                    UpdateComicStatus(
+                        comicId,
+                        "error"
+                    )
+                )
                 Result.failure()
             }
         }
@@ -106,7 +116,7 @@ class DownloadComicWorker(
                     val dir = getComicCoverDownloadDir()
                     val file = File(dir, "${comicId}.jpg")
                     FileOutputStream(file).use { out ->
-                        bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 50, out)
+                        bitmap.compressWebpCompat(50, out)
                     }
                     file.absolutePath
                 }
@@ -124,24 +134,22 @@ class DownloadComicWorker(
 
                 is NetWorkResult.Success<ComicPicListResponse> -> {
                     val dir = getComicPicListDownloadDir(comicId)
+                    val loader = ImageLoader(appContext)
                     data.data.list.mapIndexed { index, url ->
-                        val loader = ImageLoader(appContext)
-                        val request = ImageRequest.Builder(appContext)
-                            .data(url)
-                            .allowHardware(false)
-                            .build()
-
-                        when (val result = loader.execute(request)) {
-                            is ErrorResult -> {
-                                // TODO 处理错误
-                                ""
-                            }
-
-                            is SuccessResult -> {
-                                val bitmap = result.drawable.toBitmap()
+                        val imageState = ComicPicImageState(
+                            index = index,
+                            comicId = comicId,
+                            originSrc = url,
+                            __scrambleId = data.data.__scrambleId,
+                            __speed = data.data.__speed,
+                            picImageLoader = loader
+                        )
+                        imageState.decode(appContext)
+                        when (val result = imageState.imageResultState) {
+                            is ImageResultState.Success -> {
                                 val file = File(dir, "$index.webp")
                                 FileOutputStream(file).use { out ->
-                                    bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 50, out)
+                                    result.decodeImageBitmap.asAndroidBitmap().compressWebpCompat(50, out)
                                 }
                                 downloadComicDao.updateProgress(
                                     UpdateComicProgress(
@@ -150,6 +158,14 @@ class DownloadComicWorker(
                                     )
                                 )
                                 file.absolutePath
+                            }
+
+                            is ImageResultState.Failure -> {
+                                ""
+                            }
+
+                            ImageResultState.Loading -> {
+                                ""
                             }
                         }
                     }

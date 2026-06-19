@@ -42,8 +42,9 @@ fun SelectDialog(
     ) {
         Card(
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
+            shape = MaterialTheme.shapes.extraLarge,
         ) {
             Text(
                 text = title,
