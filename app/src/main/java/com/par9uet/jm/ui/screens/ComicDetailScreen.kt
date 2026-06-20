@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
@@ -38,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -374,30 +376,33 @@ fun ComicDetailScreen(
         }
     ) { innerPadding ->
         if (comicDetailState.data != null) {
-            PullToRefreshBox(
-                isRefreshing = comicDetailState.isLoading,
-                state = rememberPullToRefreshState(),
-                onRefresh = {
-                    comicDetailViewModel.getComicDetail(id)
-                },
+            Box(
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize()
             ) {
-                val comic = comicDetailState.data!!
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState),
+                PullToRefreshBox(
+                    isRefreshing = comicDetailState.isLoading,
+                    state = rememberPullToRefreshState(),
+                    onRefresh = {
+                        comicDetailViewModel.getComicDetail(id)
+                    },
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    ComicCoverImage(
-                        comic = comic,
-                        showIdChip = true
-                    )
+                    val comic = comicDetailState.data!!
                     Column(
-                        modifier = Modifier.padding(horizontal = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(scrollState),
                     ) {
+                        ComicCoverImage(
+                            comic = comic,
+                            showIdChip = true
+                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
                         // comic name
                         Text(
                             modifier = Modifier.padding(top = 10.dp),
@@ -479,6 +484,24 @@ fun ComicDetailScreen(
 
                         }
                         Box {}
+                    }
+                }
+                }
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(12.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 6.dp
+                ) {
+                    IconButton(onClick = { mainNavController.popBackStack() }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "退出详情"
+                        )
                     }
                 }
             }

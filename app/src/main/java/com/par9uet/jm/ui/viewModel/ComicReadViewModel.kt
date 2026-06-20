@@ -7,12 +7,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.ImageLoader
 import com.par9uet.jm.cache.getDownloadDir
+import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicPicImageState
 import com.par9uet.jm.database.dao.DownloadComicDao
 import com.par9uet.jm.repository.ComicRepository
+import com.par9uet.jm.retrofit.model.CollectComicResponse
+import com.par9uet.jm.retrofit.model.ComicDetailResponse
 import com.par9uet.jm.retrofit.model.ComicPicListResponse
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.store.LocalSettingManager
+import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.ui.models.CommonUIState
 import com.par9uet.jm.utils.log
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +34,7 @@ class ComicReadViewModel(
     private val picImageLoader: ImageLoader,
     private val localSettingManager: LocalSettingManager,
     private val downloadComicDao: DownloadComicDao,
+    private val toastManager: ToastManager,
 ) : ViewModel() {
     var isShowToolBar = mutableStateOf(false)
     var currentIndexState = mutableIntStateOf(0)
@@ -39,10 +44,80 @@ class ComicReadViewModel(
         )
     )
     val comicPicState = _comicPicState.asStateFlow()
+    private val _comicDetailState = MutableStateFlow(CommonUIState<Comic>())
+    val comicDetailState = _comicDetailState.asStateFlow()
 
     val size: Int get() = _comicPicState.value.data?.size ?: 0
 
     private val prefetchSet = mutableSetOf<Int>()
+
+    fun getComicDetail(comicId: Int) {
+        viewModelScope.launch {
+            _comicDetailState.update {
+                it.copy(
+                    isLoading = true,
+                    isError = false,
+                    errorMsg = ""
+                )
+            }
+            when (val data = comicRepository.getComicDetail(comicId)) {
+                is NetWorkResult.Error -> {
+                    _comicDetailState.update {
+                        it.copy(
+                            isError = true,
+                            errorMsg = data.message
+                        )
+                    }
+                }
+
+                is NetWorkResult.Success<ComicDetailResponse> -> {
+                    _comicDetailState.update {
+                        it.copy(
+                            data = data.data.toComic()
+                        )
+                    }
+                }
+            }
+            _comicDetailState.update {
+                it.copy(isLoading = false)
+            }
+        }
+    }
+
+    fun clearComicDetail() {
+        _comicDetailState.update { CommonUIState() }
+    }
+
+    fun collect(comicId: Int) {
+        updateCollectState(comicId, true)
+    }
+
+    fun unCollect(comicId: Int) {
+        updateCollectState(comicId, false)
+    }
+
+    private fun updateCollectState(comicId: Int, targetCollect: Boolean) {
+        viewModelScope.launch {
+            when (val data: NetWorkResult<CollectComicResponse> = if (targetCollect) {
+                comicRepository.collectComic(comicId)
+            } else {
+                comicRepository.unCollectComic(comicId)
+            }) {
+                is NetWorkResult.Error -> {
+                    toastManager.showAsync(data.message)
+                }
+
+                is NetWorkResult.Success<CollectComicResponse> -> {
+                    toastManager.showAsync(if (targetCollect) "收藏成功" else "取消收藏成功")
+                    _comicDetailState.update {
+                        it.copy(
+                            data = it.data?.copy(isCollect = targetCollect)
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     fun getComicPicList(comicId: Int, shunt: String, onSuccess: (() -> Unit)? = null) {
         viewModelScope.launch {
@@ -53,6 +128,7 @@ class ComicReadViewModel(
                     errorMsg = ""
                 )
             }
+            prefetchSet.clear()
             when (val data = comicRepository.getComicPicList(comicId, shunt)) {
                 is NetWorkResult.Error -> {
                     _comicPicState.update {
@@ -98,6 +174,7 @@ class ComicReadViewModel(
                     errorMsg = ""
                 )
             }
+            prefetchSet.clear()
             val downloadComic = downloadComicDao.getById(comicId)
             val imageDir = ensureLocalImageDir(context, comicId, downloadComic?.zipPath.orEmpty())
             val files = imageDir

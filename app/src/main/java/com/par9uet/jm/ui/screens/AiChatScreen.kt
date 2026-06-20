@@ -8,30 +8,45 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Menu
-import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Replay
+import androidx.compose.material.icons.rounded.SelectAll
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.ShortText
 import androidx.compose.material.icons.rounded.Stop
-import androidx.compose.material3.AssistChip
+import androidx.compose.material.icons.rounded.TravelExplore
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -42,8 +57,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,31 +71,43 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.AiChatConversation
 import com.par9uet.jm.data.models.AiChatMessage
+import com.par9uet.jm.data.models.AiSearchEngine
+import com.par9uet.jm.data.models.AiSearchSettings
+import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.ui.viewModel.AiChatViewModel
 import kotlinx.coroutines.launch
+import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiChatScreen(
-    aiChatViewModel: AiChatViewModel = koinActivityViewModel()
+    aiChatViewModel: AiChatViewModel = koinActivityViewModel(),
+    toastManager: ToastManager = getKoin().get()
 ) {
     val uiState by aiChatViewModel.uiState.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -119,7 +148,11 @@ fun AiChatScreen(
             MessageList(
                 modifier = Modifier.weight(1f),
                 messages = activeConversation?.messages.orEmpty(),
-                isSending = uiState.isSending
+                isSending = uiState.isSending,
+                onRetry = aiChatViewModel::retry,
+                onEditUserMessage = aiChatViewModel::editUserMessage,
+                onSwitchUserBranch = aiChatViewModel::switchUserBranch,
+                toastManager = toastManager
             )
             uiState.errorMessage?.let {
                 Text(
@@ -133,10 +166,12 @@ fun AiChatScreen(
             }
             ChatInputBar(
                 input = uiState.input,
-                reasoningEnabled = uiState.reasoningEnabled,
+                webSearchEnabled = uiState.webSearchEnabled,
+                searchSettings = uiState.searchSettings,
                 isSending = uiState.isSending,
                 onInputChange = aiChatViewModel::changeInput,
-                onReasoningChange = aiChatViewModel::changeReasoningEnabled,
+                onWebSearchChange = aiChatViewModel::changeWebSearchEnabled,
+                onSearchSettingsChange = aiChatViewModel::changeSearchSettings,
                 onSend = aiChatViewModel::send,
                 onStop = aiChatViewModel::stopGenerating
             )
@@ -167,7 +202,7 @@ private fun AiChatHeader(
                 style = MaterialTheme.typography.titleMedium
             )
             Text(
-                text = "chat-model-reasoning",
+                text = "chat-model",
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall,
@@ -280,12 +315,34 @@ private fun ConversationItem(
 private fun MessageList(
     modifier: Modifier,
     messages: List<AiChatMessage>,
-    isSending: Boolean
+    isSending: Boolean,
+    onRetry: (String, AiChatViewModel.RetryMode) -> Unit,
+    onEditUserMessage: (String, String) -> Unit,
+    onSwitchUserBranch: (String, Int) -> Unit,
+    toastManager: ToastManager
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content) {
+    var followOutput by remember { mutableStateOf(true) }
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }
+            .collect { scrolling ->
+                if (!scrolling) {
+                    followOutput = listState.isNearBottom()
+                }
+            }
+    }
+
+    LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            followOutput = true
+            listState.scrollToItem(messages.lastIndex)
+        }
+    }
+
+    LaunchedEffect(messages.lastOrNull()?.content, isSending, followOutput) {
+        if (messages.isNotEmpty() && followOutput && !listState.isScrollInProgress) {
+            listState.scrollToItem(messages.lastIndex)
         }
     }
 
@@ -294,7 +351,7 @@ private fun MessageList(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     modifier = Modifier.size(44.dp),
-                    imageVector = Icons.Rounded.Psychology,
+                    imageVector = Icons.Rounded.AutoAwesome,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary
                 )
@@ -315,140 +372,471 @@ private fun MessageList(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         items(messages, key = { it.id }) { message ->
-            ChatMessageBubble(message = message)
-        }
-        if (isSending) {
-            item {
-                Text(
-                    text = "正在生成...",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            ChatMessageBubble(
+                message = message,
+                retryEnabled = !isSending,
+                onRetry = onRetry,
+                onEditUserMessage = onEditUserMessage,
+                onSwitchUserBranch = onSwitchUserBranch,
+                toastManager = toastManager
+            )
         }
     }
 }
 
 @Composable
-private fun ChatMessageBubble(message: AiChatMessage) {
+private fun ChatMessageBubble(
+    message: AiChatMessage,
+    retryEnabled: Boolean,
+    onRetry: (String, AiChatViewModel.RetryMode) -> Unit,
+    onEditUserMessage: (String, String) -> Unit,
+    onSwitchUserBranch: (String, Int) -> Unit,
+    toastManager: ToastManager
+) {
     val isUser = message.role == "user"
+    val clipboardManager = LocalClipboardManager.current
+    val visibleText = remember(message.content, isUser) {
+        if (isUser) {
+            message.content
+        } else {
+            cleanAssistantAnswer(message.content)
+        }
+    }
+    var actionDialog by rememberSaveable(message.id) { mutableStateOf<MessageActionDialog?>(null) }
+    var editDialogOpen by rememberSaveable(message.id) { mutableStateOf(false) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(if (isUser) 0.86f else 0.94f),
-            color = if (isUser) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
-            },
-            contentColor = if (isUser) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-            shape = RoundedCornerShape(8.dp),
-            tonalElevation = if (isUser) 0.dp else 1.dp
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                if (isUser) {
-                    Text(text = message.content, style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    AssistantMessageContent(message = message)
+        if (isUser) {
+            Column(
+                modifier = Modifier.fillMaxWidth(0.86f),
+                horizontalAlignment = Alignment.End
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(text = message.content, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
+                UserMessageMeta(
+                    message = message,
+                    editEnabled = retryEnabled,
+                    onEditClick = { editDialogOpen = true },
+                    onSwitchBranch = onSwitchUserBranch
+                )
             }
+        } else {
+            Column(modifier = Modifier.fillMaxWidth(0.94f)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = RoundedCornerShape(8.dp),
+                    tonalElevation = 1.dp
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        AssistantMessageContent(message = message)
+                    }
+                }
+                AssistantMessageMeta(
+                    durationMs = message.durationMs,
+                    retryEnabled = retryEnabled,
+                    onCopyClick = { actionDialog = MessageActionDialog.Copy },
+                    onRetryClick = { actionDialog = MessageActionDialog.Retry }
+                )
+            }
+        }
+    }
+
+    when (actionDialog) {
+        MessageActionDialog.Copy -> {
+            MessageCopyDialog(
+                text = visibleText,
+                onDismiss = { actionDialog = null },
+                onCopyAll = {
+                    clipboardManager.setText(AnnotatedString(visibleText))
+                    toastManager.showAsync("已复制")
+                    actionDialog = null
+                },
+                onSelectCopy = { actionDialog = MessageActionDialog.SelectCopy }
+            )
+        }
+
+        MessageActionDialog.SelectCopy -> {
+            SelectCopyDialog(
+                text = visibleText,
+                onDismiss = { actionDialog = null },
+                onCopyAll = {
+                    clipboardManager.setText(AnnotatedString(visibleText))
+                    toastManager.showAsync("已复制")
+                    actionDialog = null
+                }
+            )
+        }
+
+        MessageActionDialog.Retry -> {
+            MessageRetryDialog(
+                enabled = retryEnabled,
+                onDismiss = { actionDialog = null },
+                onRetry = {
+                    onRetry(message.id, it)
+                    actionDialog = null
+                }
+            )
+        }
+
+        null -> Unit
+    }
+
+    if (editDialogOpen) {
+        EditUserMessageDialog(
+            originalText = message.content,
+            enabled = retryEnabled,
+            onDismiss = { editDialogOpen = false },
+            onConfirm = {
+                onEditUserMessage(message.id, it)
+                editDialogOpen = false
+            }
+        )
+    }
+}
+
+private enum class MessageActionDialog {
+    Copy,
+    SelectCopy,
+    Retry
+}
+
+@Composable
+private fun UserMessageMeta(
+    message: AiChatMessage,
+    editEnabled: Boolean,
+    onEditClick: () -> Unit,
+    onSwitchBranch: (String, Int) -> Unit
+) {
+    val branchCount = message.branches.size
+    val activeBranch = message.activeBranchIndex.coerceIn(0, (branchCount - 1).coerceAtLeast(0))
+    Row(
+        modifier = Modifier.padding(top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.End
+    ) {
+        if (branchCount > 0) {
+            TextButton(
+                enabled = editEnabled && activeBranch > 0,
+                onClick = { onSwitchBranch(message.id, activeBranch - 1) }
+            ) {
+                Text("<")
+            }
+            Text(
+                text = "${activeBranch + 1}/$branchCount",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(
+                enabled = editEnabled && activeBranch < branchCount - 1,
+                onClick = { onSwitchBranch(message.id, activeBranch + 1) }
+            ) {
+                Text(">")
+            }
+            Spacer(modifier = Modifier.width(4.dp))
+        }
+        TextButton(
+            enabled = editEnabled,
+            onClick = onEditClick
+        ) {
+            Icon(
+                modifier = Modifier.size(16.dp),
+                imageVector = Icons.Rounded.Edit,
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("编辑")
+        }
+    }
+}
+
+@Composable
+private fun EditUserMessageDialog(
+    originalText: String,
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var draft by rememberSaveable(originalText) { mutableStateOf(originalText) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑消息") },
+        text = {
+            OutlinedTextField(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp, max = 280.dp),
+                value = draft,
+                onValueChange = { draft = it },
+                textStyle = MaterialTheme.typography.bodyMedium,
+                minLines = 4,
+                maxLines = 10
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = enabled && draft.isNotBlank() && draft != originalText,
+                onClick = { onConfirm(draft.trim()) }
+            ) {
+                Text("重新回答")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun AssistantMessageMeta(
+    durationMs: Long?,
+    retryEnabled: Boolean,
+    onCopyClick: () -> Unit,
+    onRetryClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 4.dp, top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            modifier = Modifier.weight(1f),
+            text = durationMs?.let { "响应 ${formatDuration(it)}" } ?: "正在响应",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        IconButton(onClick = onCopyClick) {
+            Icon(
+                imageVector = Icons.Rounded.ContentCopy,
+                contentDescription = "复制"
+            )
+        }
+        IconButton(
+            onClick = onRetryClick,
+            enabled = retryEnabled
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Replay,
+                contentDescription = "重试"
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageCopyDialog(
+    text: String,
+    onDismiss: () -> Unit,
+    onCopyAll: () -> Unit,
+    onSelectCopy: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("复制") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MessageActionRow(
+                    icon = Icons.Rounded.ContentCopy,
+                    title = "全部复制",
+                    description = "复制当前回复正文",
+                    onClick = onCopyAll
+                )
+                MessageActionRow(
+                    icon = Icons.Rounded.SelectAll,
+                    title = "选择复制",
+                    description = "打开可选择文本，自行选择片段",
+                    onClick = onSelectCopy
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+@Composable
+private fun SelectCopyDialog(
+    text: String,
+    onDismiss: () -> Unit,
+    onCopyAll: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("选择复制") },
+        text = {
+            SelectionContainer {
+                Text(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    text = text.ifBlank { "暂无可复制内容" },
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onCopyAll) {
+                Text("全部复制")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+@Composable
+private fun MessageRetryDialog(
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onRetry: (AiChatViewModel.RetryMode) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("重试") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MessageActionRow(
+                    icon = Icons.Rounded.Refresh,
+                    title = "重新回答",
+                    description = "重新生成当前回复",
+                    enabled = enabled,
+                    onClick = { onRetry(AiChatViewModel.RetryMode.Regenerate) }
+                )
+                MessageActionRow(
+                    icon = Icons.Rounded.Article,
+                    title = "更详细",
+                    description = "增加细节、步骤和上下文",
+                    enabled = enabled,
+                    onClick = { onRetry(AiChatViewModel.RetryMode.Detailed) }
+                )
+                MessageActionRow(
+                    icon = Icons.Rounded.ShortText,
+                    title = "更精简",
+                    description = "压缩为只保留重点的版本",
+                    enabled = enabled,
+                    onClick = { onRetry(AiChatViewModel.RetryMode.Concise) }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        }
+    )
+}
+
+@Composable
+private fun MessageActionRow(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val contentColor = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = contentColor
+        )
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
 @Composable
 private fun AssistantMessageContent(message: AiChatMessage) {
-    val parts = remember(message.content) { splitThinkContent(message.content) }
-    if (parts.hasThink) {
-        ThinkBlock(
-            messageId = message.id,
-            text = parts.think,
-            complete = parts.complete
-        )
-        if (parts.answer.isNotBlank()) {
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-    }
-    if (parts.answer.isNotBlank()) {
-        MarkdownContent(text = parts.answer)
+    val answer = remember(message.content) { cleanAssistantAnswer(message.content) }
+    if (answer.isBlank()) {
+        AssistantLoadingContent()
+    } else {
+        MarkdownContent(text = answer)
     }
 }
 
 @Composable
-private fun ThinkBlock(
-    messageId: String,
-    text: String,
-    complete: Boolean
-) {
-    var expanded by rememberSaveable(messageId, complete) { mutableStateOf(!complete) }
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(8.dp)
+private fun AssistantLoadingContent() {
+    Row(
+        modifier = Modifier.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = complete) { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    modifier = Modifier.size(18.dp),
-                    imageVector = Icons.Rounded.Psychology,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    modifier = Modifier.weight(1f),
-                    text = if (complete) "深度思考" else "思考中",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (complete) {
-                    Icon(
-                        imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                        contentDescription = if (expanded) "收起思考" else "展开思考",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = text.ifBlank { "等待模型输出思考内容..." },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        CircularProgressIndicator(
+            modifier = Modifier.size(20.dp),
+            strokeWidth = 2.dp,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = "正在生成",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
 @Composable
 private fun ChatInputBar(
     input: String,
-    reasoningEnabled: Boolean,
+    webSearchEnabled: Boolean,
+    searchSettings: AiSearchSettings,
     isSending: Boolean,
     onInputChange: (String) -> Unit,
-    onReasoningChange: (Boolean) -> Unit,
+    onWebSearchChange: (Boolean) -> Unit,
+    onSearchSettingsChange: (AiSearchSettings) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit
 ) {
-    val density = LocalDensity.current
-    val keyboardHeight = with(density) {
-        WindowInsets.ime.getBottom(density).toDp()
-    }
-
+    var searchSettingsOpen by rememberSaveable { mutableStateOf(false) }
     Surface(
-        modifier = Modifier.padding(bottom = keyboardHeight),
+        modifier = Modifier
+            .fillMaxWidth()
+            .imePadding(),
         tonalElevation = 3.dp,
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {
@@ -460,19 +848,24 @@ private fun ChatInputBar(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(
-                    selected = reasoningEnabled,
-                    onClick = { onReasoningChange(!reasoningEnabled) },
+                    selected = webSearchEnabled,
+                    onClick = { onWebSearchChange(!webSearchEnabled) },
                     leadingIcon = {
                         Icon(
                             modifier = Modifier.size(18.dp),
-                            imageVector = Icons.Rounded.Psychology,
+                            imageVector = Icons.Rounded.TravelExplore,
                             contentDescription = null
                         )
                     },
-                    label = { Text("深度思考") }
+                    label = { Text("联网搜索") }
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                AssistChip(onClick = {}, label = { Text("流式回复") })
+                IconButton(onClick = { searchSettingsOpen = true }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Settings,
+                        contentDescription = "联网搜索设置"
+                    )
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -485,6 +878,14 @@ private fun ChatInputBar(
                     minLines = 1,
                     maxLines = 5,
                     placeholder = { Text("输入消息") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(
+                        onSend = {
+                            if (!isSending && input.isNotBlank()) {
+                                onSend()
+                            }
+                        }
+                    ),
                     enabled = !isSending
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -500,11 +901,131 @@ private fun ChatInputBar(
             }
         }
     }
+    if (searchSettingsOpen) {
+        SearchSettingsDialog(
+            settings = searchSettings,
+            onDismiss = { searchSettingsOpen = false },
+            onSave = {
+                onSearchSettingsChange(it)
+                searchSettingsOpen = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun SearchSettingsDialog(
+    settings: AiSearchSettings,
+    onDismiss: () -> Unit,
+    onSave: (AiSearchSettings) -> Unit
+) {
+    var draft by remember(settings) { mutableStateOf(settings.normalized()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("联网搜索设置") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "搜索引擎",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                SearchEngineChips(
+                    value = draft.engine,
+                    onChange = { draft = draft.copy(engine = it) }
+                )
+                Text(
+                    text = "搜索条数：${draft.resultCount}",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Slider(
+                    value = draft.resultCount.toFloat(),
+                    onValueChange = {
+                        draft = draft.copy(resultCount = it.roundToInt().coerceIn(1, 10))
+                    },
+                    valueRange = 1f..10f,
+                    steps = 8
+                )
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = draft.searxngBaseUrl,
+                    onValueChange = { draft = draft.copy(searxngBaseUrl = it) },
+                    label = { Text("SearXNG 地址") },
+                    placeholder = { Text("https://search.example.com") },
+                    singleLine = true
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        modifier = Modifier.weight(1f),
+                        value = draft.searxngLanguage,
+                        onValueChange = { draft = draft.copy(searxngLanguage = it) },
+                        label = { Text("语言") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        modifier = Modifier.weight(1f),
+                        value = draft.searxngCategories,
+                        onValueChange = { draft = draft.copy(searxngCategories = it) },
+                        label = { Text("分类") },
+                        singleLine = true
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(draft.normalized()) }) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun SearchEngineChips(
+    value: AiSearchEngine,
+    onChange: (AiSearchEngine) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(AiSearchEngine.AUTO, AiSearchEngine.BING, AiSearchEngine.SOGOU).forEach {
+                SearchEngineChip(engine = it, selected = value == it, onChange = onChange)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(AiSearchEngine.BAIDU, AiSearchEngine.SEARXNG).forEach {
+                SearchEngineChip(engine = it, selected = value == it, onChange = onChange)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchEngineChip(
+    engine: AiSearchEngine,
+    selected: Boolean,
+    onChange: (AiSearchEngine) -> Unit
+) {
+    FilterChip(
+        selected = selected,
+        onClick = { onChange(engine) },
+        label = { Text(engine.label) }
+    )
 }
 
 @Composable
 private fun MarkdownContent(text: String) {
     val lines = text.lines()
+    val uriHandler = LocalUriHandler.current
+    var pendingUrl by remember { mutableStateOf<String?>(null) }
     var index = 0
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         while (index < lines.size) {
@@ -520,22 +1041,32 @@ private fun MarkdownContent(text: String) {
                     CodeBlock(codeLines.joinToString("\n"))
                 }
 
-                line.startsWith("### ") -> MarkdownLine(line.removePrefix("### "), MarkdownKind.HeadingSmall)
-                line.startsWith("## ") -> MarkdownLine(line.removePrefix("## "), MarkdownKind.HeadingMedium)
-                line.startsWith("# ") -> MarkdownLine(line.removePrefix("# "), MarkdownKind.HeadingLarge)
-                line.trim().startsWith(">") -> MarkdownLine(line.trim().removePrefix(">").trim(), MarkdownKind.Quote)
-                line.trim().startsWith("- ") || line.trim().startsWith("* ") -> BulletLine(line.trim().drop(2))
-                numberedListText(line) != null -> BulletLine(numberedListText(line).orEmpty(), ordered = true)
+                line.startsWith("### ") -> MarkdownLine(line.removePrefix("### "), MarkdownKind.HeadingSmall) { pendingUrl = it }
+                line.startsWith("## ") -> MarkdownLine(line.removePrefix("## "), MarkdownKind.HeadingMedium) { pendingUrl = it }
+                line.startsWith("# ") -> MarkdownLine(line.removePrefix("# "), MarkdownKind.HeadingLarge) { pendingUrl = it }
+                line.trim().startsWith(">") -> MarkdownLine(line.trim().removePrefix(">").trim(), MarkdownKind.Quote) { pendingUrl = it }
+                line.trim().startsWith("- ") || line.trim().startsWith("* ") -> BulletLine(line.trim().drop(2), onLinkClick = { pendingUrl = it })
+                numberedListText(line) != null -> BulletLine(numberedListText(line).orEmpty(), ordered = true, onLinkClick = { pendingUrl = it })
                 line.isBlank() -> Spacer(modifier = Modifier.height(2.dp))
-                else -> MarkdownLine(line, MarkdownKind.Body)
+                else -> MarkdownLine(line, MarkdownKind.Body) { pendingUrl = it }
             }
             index++
         }
     }
+    pendingUrl?.let { url ->
+        ExternalLinkDialog(
+            url = url,
+            onDismiss = { pendingUrl = null },
+            onConfirm = {
+                pendingUrl = null
+                uriHandler.openUri(url)
+            }
+        )
+    }
 }
 
 @Composable
-private fun MarkdownLine(text: String, kind: MarkdownKind) {
+private fun MarkdownLine(text: String, kind: MarkdownKind, onLinkClick: (String) -> Unit) {
     val style = when (kind) {
         MarkdownKind.HeadingLarge -> MaterialTheme.typography.titleLarge
         MarkdownKind.HeadingMedium -> MaterialTheme.typography.titleMedium
@@ -543,19 +1074,24 @@ private fun MarkdownLine(text: String, kind: MarkdownKind) {
         MarkdownKind.Quote -> MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic)
         MarkdownKind.Body -> MaterialTheme.typography.bodyMedium
     }
-    Text(
-        text = inlineMarkdown(text),
-        style = style,
-        color = if (kind == MarkdownKind.Quote) {
+    val color = if (kind == MarkdownKind.Quote) {
             MaterialTheme.colorScheme.onSurfaceVariant
         } else {
             Color.Unspecified
         }
+    LinkText(
+        text = inlineMarkdown(text),
+        style = style.copy(color = color),
+        onLinkClick = onLinkClick
     )
 }
 
 @Composable
-private fun BulletLine(text: String, ordered: Boolean = false) {
+private fun BulletLine(
+    text: String,
+    ordered: Boolean = false,
+    onLinkClick: (String) -> Unit
+) {
     Row(modifier = Modifier.fillMaxWidth()) {
         Text(
             modifier = Modifier.width(18.dp),
@@ -563,12 +1099,57 @@ private fun BulletLine(text: String, ordered: Boolean = false) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Text(
+        LinkText(
             modifier = Modifier.weight(1f),
             text = inlineMarkdown(text),
-            style = MaterialTheme.typography.bodyMedium
+            style = MaterialTheme.typography.bodyMedium,
+            onLinkClick = onLinkClick
         )
     }
+}
+
+@Composable
+private fun LinkText(
+    text: AnnotatedString,
+    style: androidx.compose.ui.text.TextStyle,
+    modifier: Modifier = Modifier,
+    onLinkClick: (String) -> Unit
+) {
+    ClickableText(
+        modifier = modifier,
+        text = text,
+        style = style,
+        onClick = { offset ->
+            text.getStringAnnotations(tag = LINK_TAG, start = offset, end = offset)
+                .firstOrNull()
+                ?.let { onLinkClick(it.item) }
+        }
+    )
+}
+
+@Composable
+private fun ExternalLinkDialog(
+    url: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("即将离开应用") },
+        text = {
+            Text("外部网站不受应用控制，无法保障网站安全。\n\n$url")
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("继续跳转")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }
 
 @Composable
@@ -600,9 +1181,35 @@ private enum class MarkdownKind {
 @Composable
 private fun inlineMarkdown(text: String) = buildAnnotatedString {
     val codeBackground = MaterialTheme.colorScheme.surfaceContainerHighest
+    val linkColor = MaterialTheme.colorScheme.primary
     var index = 0
     while (index < text.length) {
+        val markdownLink = MARKDOWN_LINK_REGEX.find(text, index)
+            ?.takeIf { it.range.first == index }
+        val rawLink = RAW_URL_REGEX.find(text, index)
+            ?.takeIf { it.range.first == index }
         when {
+            markdownLink != null -> {
+                val label = markdownLink.groupValues[1]
+                val url = markdownLink.groupValues[2]
+                pushStringAnnotation(tag = LINK_TAG, annotation = url)
+                pushStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
+                append(label)
+                pop()
+                pop()
+                index = markdownLink.range.last + 1
+            }
+
+            rawLink != null -> {
+                val url = rawLink.value.trimEnd('.', ',', ';', ')', ']', '}')
+                pushStringAnnotation(tag = LINK_TAG, annotation = url)
+                pushStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
+                append(url)
+                pop()
+                pop()
+                index += rawLink.value.length
+            }
+
             text.startsWith("**", index) -> {
                 val end = text.indexOf("**", startIndex = index + 2)
                 if (end > index) {
@@ -642,55 +1249,32 @@ private fun inlineMarkdown(text: String) = buildAnnotatedString {
     }
 }
 
-private data class ThinkParts(
-    val hasThink: Boolean,
-    val think: String,
-    val answer: String,
-    val complete: Boolean
-)
+private const val LINK_TAG = "URL"
+private val MARKDOWN_LINK_REGEX = Regex("""\[([^\]]+)]\((https?://[^)\s]+)\)""")
+private val RAW_URL_REGEX = Regex("""https?://[^\s<>()]+""")
+private const val THINK_OPEN = "<think>"
+private const val THINK_CLOSE = "</think>"
 
-private fun splitThinkContent(content: String): ThinkParts {
-    val start = content.indexOf("<think>")
-    if (start < 0) {
-        if ("<think>".startsWith(content.trim()) && content.isNotBlank()) {
-            return ThinkParts(hasThink = true, think = "", answer = "", complete = false)
+private fun cleanAssistantAnswer(content: String): String {
+    var result = content
+    while (true) {
+        val open = result.indexOf(THINK_OPEN)
+        if (open < 0) break
+        val close = result.indexOf(THINK_CLOSE, startIndex = open + THINK_OPEN.length)
+        result = if (close >= 0) {
+            result.removeRange(open, close + THINK_CLOSE.length)
+        } else {
+            result.substring(0, open)
         }
-        return ThinkParts(hasThink = false, think = "", answer = content, complete = true)
     }
-    val thinkStart = start + "<think>".length
-    val end = content.lastIndexOf("</think>")
-    if (end < 0) {
-        return ThinkParts(
-            hasThink = true,
-            think = sanitizeThinkText(removeTrailingPartialThinkClose(content.substring(thinkStart))),
-            answer = content.substring(0, start).trim(),
-            complete = false
-        )
+    val strayClose = result.indexOf(THINK_CLOSE)
+    if (strayClose >= 0) {
+        result = result.substring(strayClose + THINK_CLOSE.length)
     }
-    return ThinkParts(
-        hasThink = true,
-        think = sanitizeThinkText(content.substring(thinkStart, end)),
-        answer = (content.substring(0, start) + content.substring(end + "</think>".length)).trim(),
-        complete = true
-    )
-}
-
-private fun sanitizeThinkText(text: String): String {
-    return text
-        .replace("<think>", "")
-        .replace("</think>", "")
+    return result
+        .replace(THINK_OPEN, "")
+        .replace(THINK_CLOSE, "")
         .trim()
-}
-
-private fun removeTrailingPartialThinkClose(text: String): String {
-    val endTag = "</think>"
-    for (length in endTag.length - 1 downTo 1) {
-        val prefix = endTag.take(length)
-        if (text.endsWith(prefix)) {
-            return text.dropLast(length)
-        }
-    }
-    return text
 }
 
 private fun numberedListText(line: String): String? {
@@ -698,6 +1282,23 @@ private fun numberedListText(line: String): String? {
     return match.groupValues[1]
 }
 
+private fun LazyListState.isNearBottom(): Boolean {
+    val info = layoutInfo
+    val totalItems = info.totalItemsCount
+    if (totalItems == 0) return true
+    val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: return true
+    return lastVisible >= totalItems - 2
+}
+
 private fun formatTime(value: Long): String {
     return SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(value))
+}
+
+private fun formatDuration(value: Long): String {
+    return if (value < 1000) {
+        "${value}ms"
+    } else {
+        val seconds = value / 1000.0
+        String.format(Locale.getDefault(), "%.1fs", seconds)
+    }
 }

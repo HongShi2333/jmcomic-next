@@ -20,10 +20,12 @@ import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Leaderboard
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -356,6 +358,12 @@ fun UserScreen(
 
             MenuGroup {
                 MenuItem(
+                    icon = Icons.Default.Download,
+                    label = "下载中心",
+                    onClick = { mainNavController.navigate("download") }
+                )
+                MenuDivider()
+                MenuItem(
                     icon = Icons.Default.Bookmarks,
                     label = "我的收藏",
                     onClick = {
@@ -388,8 +396,14 @@ fun UserScreen(
                 )
             }
 
-            if (isLogin) {
-                MenuGroup {
+            MenuGroup {
+                MenuItem(
+                    icon = Icons.Default.Settings,
+                    label = "设置",
+                    onClick = { mainNavController.navigate("appLocalSetting") }
+                )
+                if (isLogin) {
+                    MenuDivider()
                     MenuItem(
                         icon = Icons.AutoMirrored.Filled.Logout,
                         label = "退出登录",

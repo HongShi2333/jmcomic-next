@@ -2,9 +2,7 @@ package com.par9uet.jm.ui.screens.tabScreen
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,7 +57,6 @@ private fun HomeTopBarComponent() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UserTopBarComponent() {
-    val mainNavController = LocalMainNavController.current
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -73,24 +70,7 @@ private fun UserTopBarComponent() {
                 overflow = TextOverflow.Ellipsis
             )
         },
-        actions = {
-            IconButton(onClick = {
-                mainNavController.navigate("appLocalSetting")
-            }) {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = "设置",
-                )
-            }
-            IconButton(onClick = {
-                mainNavController.navigate("download")
-            }) {
-                Icon(
-                    Icons.Default.Download,
-                    contentDescription = "下载",
-                )
-            }
-        }
+        actions = {}
     )
 }
 

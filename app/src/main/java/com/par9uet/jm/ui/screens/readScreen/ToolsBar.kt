@@ -13,8 +13,13 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.NavigateBefore
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +45,10 @@ fun ToolsBar(
     modifier: Modifier = Modifier,
     currentIndex: Int,
     pageCount: Int,
+    previousChapterEnabled: Boolean,
+    nextChapterEnabled: Boolean,
+    onPreviousChapter: () -> Unit,
+    onNextChapter: () -> Unit,
     onPageSelected: (index: Int) -> Unit,
 ) {
     val lastIndex = (pageCount - 1).coerceAtLeast(0)
@@ -69,17 +78,40 @@ fun ToolsBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
+                FilledTonalIconButton(
+                    enabled = previousChapterEnabled,
+                    onClick = onPreviousChapter
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.NavigateBefore,
+                        contentDescription = "上一章"
+                    )
+                }
                 Text(
                     text = "$currentPage / $pageCount",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = progressText,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = progressText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    FilledTonalIconButton(
+                        enabled = nextChapterEnabled,
+                        onClick = onNextChapter
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.NavigateNext,
+                            contentDescription = "下一章"
+                        )
+                    }
+                }
             }
             PageProgressBar(
                 currentIndex = safeIndex,

@@ -56,6 +56,8 @@ fun AppScreen(
             composable(route = "userHistoryComic") { UserHistoryComicScreen() }
             composable(route = "userHistoryComment") { UserHistoryCommentScreen() }
             composable(route = "appLocalSetting") { LocalSettingScreen() }
+            composable(route = "about") { AboutScreen() }
+            composable(route = "checkUpdate") { CheckUpdateScreen() }
             composable(
                 route = "comicDetail/{id}",
                 arguments = listOf(
