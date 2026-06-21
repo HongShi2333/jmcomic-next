@@ -1,5 +1,6 @@
 package com.par9uet.jm.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,12 +54,10 @@ fun ComicSearchScreen(
     val textFieldState = rememberTextFieldState()
     val historySearchState by historySearchManager.historySearchState.collectAsState()
     fun onSearch(text: String) {
-        historySearchManager.addItem(text)
-        mainNavController.navigate("comicSearchResult/$text") {
-            popUpTo("comicSearch") {
-                inclusive = true
-            }
-        }
+        val query = text.trim()
+        if (query.isBlank()) return
+        historySearchManager.addItem(query)
+        mainNavController.navigate("comicSearchResult/${Uri.encode(query)}")
     }
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()

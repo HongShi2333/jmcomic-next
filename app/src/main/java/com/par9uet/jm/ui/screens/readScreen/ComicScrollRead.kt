@@ -42,6 +42,7 @@ fun ComicScrollRead(
     lazyListState: LazyListState,
     pagerState: PagerState,
     targetIndex: Int,
+    zoomState: ReaderZoomState,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
     onUpdateSliderValue: (value: Float) -> Unit
 ) {
@@ -140,8 +141,10 @@ fun ComicScrollRead(
     ) {
         LazyColumn(
             state = lazyListState,
+            userScrollEnabled = !zoomState.isZoomed,
             modifier = Modifier
                 .fillMaxSize()
+                .readerZoomable(zoomState)
         ) {
             items(list, key = {
                 "${it.comicId}_${it.originSrc}"

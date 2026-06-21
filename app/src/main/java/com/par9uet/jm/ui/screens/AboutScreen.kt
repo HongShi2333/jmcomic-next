@@ -102,6 +102,7 @@ fun AboutScreen() {
 fun CheckUpdateScreen() {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
+    val appIcon = remember(context) { loadAppIconBitmap(context) }
     val appVersion = remember(context) { appVersionName(context) }
     val versionCode = remember(context) { appVersionCode(context) }
     val coroutineScope = rememberCoroutineScope()
@@ -131,6 +132,13 @@ fun CheckUpdateScreen() {
         ) {
             item {
                 SimpleSection("当前版本") {
+                    appIcon?.let {
+                        Image(
+                            bitmap = it.asImageBitmap(),
+                            contentDescription = "应用图标",
+                            modifier = Modifier.size(64.dp)
+                        )
+                    }
                     SectionLine("版本名称：$appVersion")
                     SectionLine("版本代码：$versionCode")
                 }
@@ -139,7 +147,7 @@ fun CheckUpdateScreen() {
                 SimpleSection("更新检查") {
                     when (val state = updateState) {
                         UpdateState.Idle -> {
-                            SectionLine("点击下方按钮检查 GitHub Releases 最新版本。")
+                            SectionLine("可检查 GitHub Releases 是否有新版本。")
                         }
 
                         UpdateState.Checking -> {
@@ -152,6 +160,7 @@ fun CheckUpdateScreen() {
                                 SectionLine("发现新版本：${state.release.version}")
                                 SectionLine("Release 名称：${state.release.name.ifBlank { state.release.version }}")
                                 SectionLine("Release 链接：${state.release.url}")
+                                SectionLine("请复制 Release 链接后到浏览器下载。")
                                 OutlinedButton(
                                     onClick = {
                                         clipboardManager.setText(AnnotatedString(state.release.url))

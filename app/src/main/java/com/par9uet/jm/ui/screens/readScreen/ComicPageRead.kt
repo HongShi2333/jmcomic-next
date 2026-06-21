@@ -34,6 +34,7 @@ fun ComicPageRead(
     lazyListState: LazyListState,
     pagerState: PagerState,
     targetIndex: Int,
+    zoomState: ReaderZoomState,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
     onUpdateSliderValue: (value: Float) -> Unit
 ) {
@@ -78,6 +79,7 @@ fun ComicPageRead(
     HorizontalPager(
         modifier = Modifier
             .fillMaxSize()
+            .readerZoomable(zoomState)
             .pointerInput(Unit) {
                 awaitPointerEventScope {
                     while (true) {
@@ -125,7 +127,8 @@ fun ComicPageRead(
                     }
                 }
             },
-        state = pagerState
+        state = pagerState,
+        userScrollEnabled = !zoomState.isZoomed
     ) { page ->
         val item = list[page]
         ComicPicImage(

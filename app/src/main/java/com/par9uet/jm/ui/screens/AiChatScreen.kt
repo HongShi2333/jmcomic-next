@@ -1077,7 +1077,7 @@ private fun MarkdownLine(text: String, kind: MarkdownKind, onLinkClick: (String)
     val color = if (kind == MarkdownKind.Quote) {
             MaterialTheme.colorScheme.onSurfaceVariant
         } else {
-            Color.Unspecified
+            MaterialTheme.colorScheme.onSurface
         }
     LinkText(
         text = inlineMarkdown(text),
@@ -1102,7 +1102,9 @@ private fun BulletLine(
         LinkText(
             modifier = Modifier.weight(1f),
             text = inlineMarkdown(text),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface
+            ),
             onLinkClick = onLinkClick
         )
     }
@@ -1191,7 +1193,7 @@ private fun inlineMarkdown(text: String) = buildAnnotatedString {
         when {
             markdownLink != null -> {
                 val label = markdownLink.groupValues[1]
-                val url = markdownLink.groupValues[2]
+                val url = normalizeLinkUrl(markdownLink.groupValues[2])
                 pushStringAnnotation(tag = LINK_TAG, annotation = url)
                 pushStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
                 append(label)
@@ -1201,10 +1203,10 @@ private fun inlineMarkdown(text: String) = buildAnnotatedString {
             }
 
             rawLink != null -> {
-                val url = rawLink.value.trimEnd('.', ',', ';', ')', ']', '}')
+                val url = normalizeLinkUrl(rawLink.value.trimEnd('.', ',', ';', ')', ']', '}'))
                 pushStringAnnotation(tag = LINK_TAG, annotation = url)
                 pushStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline))
-                append(url)
+                append(displayLinkText(url))
                 pop()
                 pop()
                 index += rawLink.value.length
@@ -1250,10 +1252,27 @@ private fun inlineMarkdown(text: String) = buildAnnotatedString {
 }
 
 private const val LINK_TAG = "URL"
-private val MARKDOWN_LINK_REGEX = Regex("""\[([^\]]+)]\((https?://[^)\s]+)\)""")
-private val RAW_URL_REGEX = Regex("""https?://[^\s<>()]+""")
+private val MARKDOWN_LINK_REGEX = Regex("""\[([^\]]+)]\(((?:https?://|www\.)[^)\s]+)\)""")
+private val RAW_URL_REGEX = Regex("""(?:https?://|www\.)[^\s<>()]+""")
 private const val THINK_OPEN = "<think>"
 private const val THINK_CLOSE = "</think>"
+
+private fun normalizeLinkUrl(url: String): String {
+    val trimmed = url.trim()
+    return if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        trimmed
+    } else {
+        "https://$trimmed"
+    }
+}
+
+private fun displayLinkText(url: String): String {
+    return runCatching {
+        java.net.URI(url).host
+            ?.removePrefix("www.")
+            ?.takeIf { it.isNotBlank() }
+    }.getOrNull() ?: "来源链接"
+}
 
 private fun cleanAssistantAnswer(content: String): String {
     var result = content

@@ -51,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -90,6 +91,7 @@ fun ComicReadScreen(
     val loading = comicPicState.isLoading
     val lazyListState = rememberLazyListState()
     val pagerState = rememberPagerState(initialPage = 0) { size }
+    val zoomState = rememberReaderZoomState()
     var targetIndex by remember { mutableIntStateOf(0) }
     var activeDialog by remember { mutableStateOf<ReadPanelDialog?>(null) }
     val chapterIndex = remember(comic?.comicChapterList, comicId) {
@@ -109,7 +111,7 @@ fun ComicReadScreen(
         } else {
             "comicRead/${chapter.id}"
         }
-        val currentRoute = if (localOnly) "localComicRead/{id}" else "comicRead/{id}"
+        val currentRoute = if (localOnly) "localComicRead/$comicId" else "comicRead/$comicId"
         mainNavController.navigate(targetRoute) {
             popUpTo(currentRoute) {
                 inclusive = true
@@ -120,6 +122,7 @@ fun ComicReadScreen(
     fun updateIndexFromReader(value: Float) {
         val target = value.toInt().coerceIn(0, maxOf(0, size - 1))
         if (target != currentIndexState) {
+            zoomState.reset()
             currentIndexState = target
         }
     }
@@ -128,6 +131,7 @@ fun ComicReadScreen(
         if (size <= 0) return
 
         val target = index.coerceIn(0, size - 1)
+        zoomState.reset()
         currentIndexState = target
         targetIndex = target
         comicReadViewModel.decodeIndex(target, context)
@@ -138,6 +142,7 @@ fun ComicReadScreen(
         val onSuccess = {
             currentIndexState = 0
             targetIndex = 0
+            zoomState.reset()
             comicReadViewModel.decodeIndex(0, context)
         }
         if (localOnly) {
@@ -187,6 +192,7 @@ fun ComicReadScreen(
                     lazyListState = lazyListState,
                     pagerState = pagerState,
                     targetIndex = targetIndex,
+                    zoomState = zoomState,
                     onUpdateSliderValue = { updateIndexFromReader(it) }
                 )
             } else {
@@ -194,13 +200,14 @@ fun ComicReadScreen(
                     lazyListState = lazyListState,
                     pagerState = pagerState,
                     targetIndex = targetIndex,
+                    zoomState = zoomState,
                     onUpdateSliderValue = { updateIndexFromReader(it) }
                 )
             }
             AnimatedVisibility(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 12.dp),
+                    .padding(start = 10.dp),
                 visible = isShowToolbar,
                 enter = slideInHorizontally(
                     initialOffsetX = { fullWidth -> -fullWidth },
@@ -256,15 +263,17 @@ fun ComicReadScreen(
                     pageCount = size,
                     previousChapterEnabled = previousChapter != null,
                     nextChapterEnabled = nextChapter != null,
+                    showResetZoom = zoomState.isZoomed,
                     onPreviousChapter = { navigateToChapter(previousChapter) },
                     onNextChapter = { navigateToChapter(nextChapter) },
-                    onPageSelected = { jumpToIndex(it) }
+                    onPageSelected = { jumpToIndex(it) },
+                    onResetZoom = { zoomState.reset() }
                 )
             }
             AnimatedVisibility(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 12.dp, top = 18.dp),
+                    .padding(start = 12.dp, top = 12.dp),
                 visible = isShowToolbar,
                 enter = slideInHorizontally(
                     initialOffsetX = { fullWidth -> -fullWidth },
@@ -360,15 +369,16 @@ private fun ReadSideBar(
     onChapterJump: () -> Unit,
 ) {
     Surface(
+        modifier = Modifier.shadow(14.dp, RoundedCornerShape(28.dp)),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
         tonalElevation = 10.dp,
         shadowElevation = 10.dp,
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(28.dp),
     ) {
         Column(
             modifier = Modifier
-                .width(78.dp)
-                .padding(vertical = 10.dp),
+                .width(82.dp)
+                .padding(vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {

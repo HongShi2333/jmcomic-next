@@ -1,11 +1,6 @@
 package com.par9uet.jm.ui.screens.tabScreen
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -14,12 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.navigation.compose.currentBackStackEntryAsState
-import com.par9uet.jm.ui.screens.LocalMainNavController
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeTopBarComponent() {
-    val mainNavController = LocalMainNavController.current
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -33,24 +26,7 @@ private fun HomeTopBarComponent() {
                 overflow = TextOverflow.Ellipsis
             )
         },
-        actions = {
-            IconButton(onClick = {
-                mainNavController.navigate("comicRecommend")
-            }) {
-                Icon(
-                    Icons.Default.DateRange,
-                    contentDescription = "每周推荐",
-                )
-            }
-            IconButton(onClick = {
-                mainNavController.navigate("comicSearch")
-            }) {
-                Icon(
-                    Icons.Default.Search,
-                    contentDescription = "搜索",
-                )
-            }
-        }
+        actions = {}
     )
 }
 

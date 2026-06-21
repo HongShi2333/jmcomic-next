@@ -22,6 +22,7 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,9 +48,11 @@ fun ToolsBar(
     pageCount: Int,
     previousChapterEnabled: Boolean,
     nextChapterEnabled: Boolean,
+    showResetZoom: Boolean = false,
     onPreviousChapter: () -> Unit,
     onNextChapter: () -> Unit,
     onPageSelected: (index: Int) -> Unit,
+    onResetZoom: () -> Unit = {},
 ) {
     val lastIndex = (pageCount - 1).coerceAtLeast(0)
     val safeIndex = currentIndex.coerceIn(0, lastIndex)
@@ -111,6 +114,20 @@ fun ToolsBar(
                             contentDescription = "下一章"
                         )
                     }
+                }
+            }
+            if (showResetZoom) {
+                TextButton(
+                    modifier = Modifier
+                        .align(Alignment.CenterHorizontally),
+                    onClick = onResetZoom
+                ) {
+                    Text(
+                        text = "还原页面",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
             PageProgressBar(

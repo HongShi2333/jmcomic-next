@@ -401,20 +401,21 @@ class AiChatViewModel(
         webContext: String?,
         retryInstruction: String?
     ): List<OpenAiChatMessage> {
+        val today = todayText()
         val requestMessages = messages.map {
             OpenAiChatMessage(role = it.role, content = it.content)
         }
         val systemPrompts = mutableListOf(
             OpenAiChatMessage(
                 role = "system",
-                content = "当前日期是 2026-06-20。请直接输出给用户看的正式回答，不要输出内部推理过程、隐藏分析标记或占位内容。涉及新闻、版本、价格、政策、人物职位、时间敏感信息时，优先使用客户端提供的联网搜索结果；没有可靠搜索结果时必须说明无法确认最新信息。"
+                content = "当前日期是 $today。请直接输出给用户看的正式回答，不要输出内部推理过程、隐藏分析标记或占位内容。涉及新闻、版本、价格、政策、人物职位、时间敏感信息时，优先使用客户端提供的联网搜索结果；没有可靠搜索结果时必须说明无法确认最新信息。"
             )
         )
 
         if (webContext != null) {
             systemPrompts += OpenAiChatMessage(
                 role = "system",
-                content = "下面是客户端在 2026-06-20 自动联网搜索到的参考信息。只要问题涉及最新、当前、今天、最近、版本、价格、政策、人物职位或其他时效信息，就必须优先使用这些结果；采用时请在答案中说明来源链接。若参考信息不足或不相关，请直接说明无法从联网结果确认，不要编造，也不要用旧知识冒充最新信息。\n\n$webContext"
+                content = "下面是客户端在 $today 自动联网搜索到的参考信息。联网搜索已经开启，你必须优先阅读并使用这些结果回答；采用时请在答案中说明来源链接。若参考信息不足或不相关，请直接说明无法从联网结果确认，不要编造，也不要用旧知识冒充最新信息。\n\n$webContext"
             )
         }
 
@@ -442,8 +443,19 @@ class AiChatViewModel(
         settings: AiSearchSettings
     ): String? {
         if (!webSearchEnabled) return null
-        return aiChatRepository.searchWebContext(text, settings)
+        val query = buildSearchQuery(text)
+        return aiChatRepository.searchWebContext(query, settings)
             ?: "客户端已尝试联网搜索，但没有获得可用结果。请在回答中明确说明无法从联网结果确认最新信息，不要使用旧知识冒充最新信息。"
+    }
+
+    private fun buildSearchQuery(text: String): String {
+        val normalized = text.trim()
+        val suffix = " ${todayText()} 2026 最新"
+        return if (normalized.contains("2026") || normalized.contains("最新") || normalized.contains("今天") || normalized.contains("现在")) {
+            normalized
+        } else {
+            normalized + suffix
+        }
     }
 
     private fun newConversationModel(): AiChatConversation {
@@ -503,5 +515,10 @@ class AiChatViewModel(
 
     private fun persist(conversations: List<AiChatConversation>) {
         aiChatStorage.set(conversations.map { it.withSyncedActiveBranch() }.sortedByDescending { it.updatedAt })
+    }
+
+    private fun todayText(): String {
+        return java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            .format(java.util.Date())
     }
 }
