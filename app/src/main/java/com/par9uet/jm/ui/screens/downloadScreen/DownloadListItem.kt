@@ -52,7 +52,7 @@ import com.par9uet.jm.utils.shimmer
 import org.koin.compose.getKoin
 import java.io.File
 
-private const val MAX_EXPANDED_CHAPTER_ROWS = 6
+// Removed MAX_EXPANDED_CHAPTER_ROWS limit to show all chapters
 
 @Composable
 private fun ComicCoverImage(
@@ -168,22 +168,12 @@ fun DownloadGroupRowItem(
             }
             if (expanded && group.chapterSize > 1) {
                 HorizontalDivider()
-                val visibleChapters = group.sortedChapters.take(MAX_EXPANDED_CHAPTER_ROWS)
-                visibleChapters.forEach { chapter ->
+                group.sortedChapters.forEach { chapter ->
                     DownloadChapterRow(
                         chapter = chapter,
                         onClick = onChapterClick?.let { click ->
                             { click(chapter) }
                         }
-                    )
-                }
-                val hiddenCount = group.chapterSize - visibleChapters.size
-                if (hiddenCount > 0) {
-                    Text(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                        text = "还有 $hiddenCount 话，已收起以节省空间",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

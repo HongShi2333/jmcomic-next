@@ -8,8 +8,10 @@ import androidx.lifecycle.viewModelScope
 import coil.ImageLoader
 import com.par9uet.jm.cache.getDownloadDir
 import com.par9uet.jm.data.models.Comic
+import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.data.models.ComicPicImageState
 import com.par9uet.jm.database.dao.DownloadComicDao
+import com.par9uet.jm.database.model.DownloadComic
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
@@ -46,6 +48,8 @@ class ComicReadViewModel(
     val comicPicState = _comicPicState.asStateFlow()
     private val _comicDetailState = MutableStateFlow(CommonUIState<Comic>())
     val comicDetailState = _comicDetailState.asStateFlow()
+    private val _localChapterNavigationState = MutableStateFlow(LocalChapterNavigationState())
+    val localChapterNavigationState = _localChapterNavigationState.asStateFlow()
 
     val size: Int get() = _comicPicState.value.data?.size ?: 0
 
@@ -86,6 +90,79 @@ class ComicReadViewModel(
 
     fun clearComicDetail() {
         _comicDetailState.update { CommonUIState() }
+        _localChapterNavigationState.update { LocalChapterNavigationState() }
+    }
+
+    fun loadLocalComicChapters(comicId: Int) {
+        viewModelScope.launch {
+            val currentComic = downloadComicDao.getById(comicId)
+            _localChapterNavigationState.update { LocalChapterNavigationState() }
+            if (currentComic != null) {
+                val parentId = if (currentComic.parentId != 0) {
+                    currentComic.parentId
+                } else {
+                    currentComic.id
+                }
+
+                val allChapters = downloadComicDao.getChaptersByParent(parentId)
+                    .sortedWith(compareBy<DownloadComic> { it.chapterIndex }
+                        .thenBy { it.createTime }
+                        .thenBy { it.id })
+
+                val previousChapterIndex = currentComic.chapterIndex - 1
+                val nextChapterIndex = currentComic.chapterIndex + 1
+                _localChapterNavigationState.update {
+                    LocalChapterNavigationState(
+                        previousChapter = allChapters.firstOrNull { it.chapterIndex == previousChapterIndex }
+                            ?.takeIf { it.status == "complete" }
+                            ?.toComicChapter(),
+                        nextChapter = allChapters.firstOrNull { it.chapterIndex == nextChapterIndex }
+                            ?.takeIf { it.status == "complete" }
+                            ?.toComicChapter()
+                    )
+                }
+
+                val completedChapters = allChapters.filter { it.status == "complete" }
+
+                if (completedChapters.isNotEmpty()) {
+                    val chapterList = completedChapters.map { chapter -> chapter.toComicChapter() }
+
+                    _comicDetailState.update {
+                        it.copy(
+                            data = Comic.create(
+                                id = parentId,
+                                name = currentComic.parentName.ifBlank { currentComic.name },
+                                authorList = currentComic.authorList
+                            ).copy(comicChapterList = chapterList)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun DownloadComic.toComicChapter(): ComicChapter {
+        return ComicChapter(
+            id = id,
+            name = buildChapterName(this)
+        )
+    }
+
+    private fun buildChapterName(chapter: DownloadComic): String {
+        val hasChapterMetadata = chapter.parentId != chapter.id ||
+            chapter.chapterCount > 1 ||
+            chapter.chapterName.isNotBlank()
+
+        if (!hasChapterMetadata) {
+            return chapter.name
+        }
+
+        val numberText = "第" + (chapter.chapterIndex + 1) + "话"
+        return if (chapter.chapterName.isBlank()) {
+            numberText
+        } else {
+            numberText + " " + chapter.chapterName
+        }
     }
 
     fun collect(comicId: Int) {
@@ -294,3 +371,8 @@ class ComicReadViewModel(
         isShowToolBar.value = true
     }
 }
+
+data class LocalChapterNavigationState(
+    val previousChapter: ComicChapter? = null,
+    val nextChapter: ComicChapter? = null,
+)

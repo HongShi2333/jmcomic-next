@@ -51,7 +51,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -87,6 +86,7 @@ fun ComicReadScreen(
     val localSetting by localSettingManager.localSettingState.collectAsState()
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
     val comicDetailState by comicReadViewModel.comicDetailState.collectAsState()
+    val localChapterNavigationState by comicReadViewModel.localChapterNavigationState.collectAsState()
     val comic = comicDetailState.data
     val loading = comicPicState.isLoading
     val lazyListState = rememberLazyListState()
@@ -102,6 +102,16 @@ fun ComicReadScreen(
     }
     val nextChapter = remember(comic?.comicChapterList, chapterIndex) {
         comic?.comicChapterList?.getOrNull(chapterIndex + 1)
+    }
+    val toolbarPreviousChapter = if (localOnly) {
+        localChapterNavigationState.previousChapter
+    } else {
+        previousChapter
+    }
+    val toolbarNextChapter = if (localOnly) {
+        localChapterNavigationState.nextChapter
+    } else {
+        nextChapter
     }
 
     fun navigateToChapter(chapter: ComicChapter?) {
@@ -146,7 +156,7 @@ fun ComicReadScreen(
             comicReadViewModel.decodeIndex(0, context)
         }
         if (localOnly) {
-            comicReadViewModel.clearComicDetail()
+            comicReadViewModel.loadLocalComicChapters(comicId)
             comicReadViewModel.getLocalComicPicList(comicId, context, onSuccess)
         } else {
             comicReadViewModel.getComicDetail(comicId)
@@ -261,11 +271,11 @@ fun ComicReadScreen(
                 ToolsBar(
                     currentIndex = currentIndexState,
                     pageCount = size,
-                    previousChapterEnabled = previousChapter != null,
-                    nextChapterEnabled = nextChapter != null,
+                    previousChapterEnabled = toolbarPreviousChapter != null,
+                    nextChapterEnabled = toolbarNextChapter != null,
                     showResetZoom = zoomState.isZoomed,
-                    onPreviousChapter = { navigateToChapter(previousChapter) },
-                    onNextChapter = { navigateToChapter(nextChapter) },
+                    onPreviousChapter = { navigateToChapter(toolbarPreviousChapter) },
+                    onNextChapter = { navigateToChapter(toolbarNextChapter) },
                     onPageSelected = { jumpToIndex(it) },
                     onResetZoom = { zoomState.reset() }
                 )
@@ -363,10 +373,9 @@ private fun ReadSideBar(
     onChapterJump: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.shadow(14.dp, RoundedCornerShape(28.dp)),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
-        tonalElevation = 10.dp,
-        shadowElevation = 10.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 8.dp,
+        shadowElevation = 8.dp,
         shape = RoundedCornerShape(28.dp),
     ) {
         Column(
