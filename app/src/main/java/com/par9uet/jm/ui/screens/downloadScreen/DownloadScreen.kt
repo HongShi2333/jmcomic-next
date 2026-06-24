@@ -21,27 +21,40 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.par9uet.jm.database.dao.ChapterProgressDao
+import com.par9uet.jm.database.dao.ReadingProgressDao
+import com.par9uet.jm.database.model.ChapterProgress
+import com.par9uet.jm.database.model.ReadingProgress
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.DownloadComicGroup
 import com.par9uet.jm.ui.viewModel.DownloadViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 fun DownloadScreen(
-    downloadViewModel: DownloadViewModel = koinActivityViewModel()
+    downloadViewModel: DownloadViewModel = koinActivityViewModel(),
+    readingProgressDao: ReadingProgressDao = getKoin().get(),
+    chapterProgressDao: ChapterProgressDao = getKoin().get()
 ) {
     val mainNavController = LocalMainNavController.current
+    val coroutineScope = rememberCoroutineScope()
     val completeGroups by downloadViewModel.completeGroups.collectAsState()
     val activeGroups by downloadViewModel.activeGroups.collectAsState()
     val errorGroups by downloadViewModel.errorGroups.collectAsState()
@@ -50,6 +63,34 @@ fun DownloadScreen(
     var activeExpanded by rememberSaveable { mutableStateOf(false) }
     var errorExpanded by rememberSaveable { mutableStateOf(false) }
     var expandedGroupKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var progressMap by remember { mutableStateOf<Map<Int, ReadingProgress>>(emptyMap()) }
+    var chapterProgressMap by remember { mutableStateOf<Map<Int, ChapterProgress>>(emptyMap()) }
+
+    // Load reading progress for all complete groups
+    LaunchedEffect(completeGroups) {
+        coroutineScope.launch {
+            val parentIds = completeGroups.map { group ->
+                val primary = group.primary
+                if (primary.parentId != 0) primary.parentId else primary.id
+            }.distinct()
+
+            val progresses = withContext(Dispatchers.IO) {
+                parentIds.mapNotNull { parentId ->
+                    readingProgressDao.getProgress(parentId)?.let { parentId to it }
+                }.toMap()
+            }
+            progressMap = progresses
+
+            // Load chapter progress for all chapters
+            val allChapterIds = completeGroups.flatMap { it.ids }
+            val chapterProgresses = withContext(Dispatchers.IO) {
+                allChapterIds.mapNotNull { chapterId ->
+                    chapterProgressDao.getProgress(chapterId)?.let { chapterId to it }
+                }.toMap()
+            }
+            chapterProgressMap = chapterProgresses
+        }
+    }
 
     fun toggleGroup(key: String) {
         expandedGroupKeys = if (key in expandedGroupKeys) {
@@ -86,19 +127,25 @@ fun DownloadScreen(
                 if (completeExpanded) {
                     items(completeGroups, key = { "complete-${it.key}" }) { group ->
                         val groupKey = "complete-${group.key}"
+                        val primary = group.primary
+                        val parentId = if (primary.parentId != 0) primary.parentId else primary.id
+                        val progress = progressMap[parentId]
+
                         DownloadGroupRowItem(
                             modifier = Modifier.fillMaxWidth(),
                             group = group,
                             expanded = groupKey in expandedGroupKeys,
                             editing = editState.editing,
                             selected = group.ids.all { it in editState.selectedIds },
+                            readingProgress = progress,
+                            chapterProgressMap = chapterProgressMap,
                             onClick = {
                                 if (editState.editing) {
                                     downloadViewModel.toggleSelected(group.ids)
-                                } else if (group.chapterSize == 1) {
-                                    mainNavController.navigate("downloadComicDetail/${group.primary.id}")
                                 } else {
-                                    toggleGroup(groupKey)
+                                    // Click card: navigate to last read chapter
+                                    val targetChapterId = progress?.chapterId ?: primary.id
+                                    mainNavController.navigate("localComicRead/$targetChapterId")
                                 }
                             },
                             onLongClick = { downloadViewModel.enterEdit(group.ids) },

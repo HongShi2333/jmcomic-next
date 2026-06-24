@@ -19,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -32,6 +33,7 @@ import com.par9uet.jm.ui.viewModel.UserViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 
+@Preview
 @Composable
 private fun UserCollectComicSkeleton(
     modifier: Modifier = Modifier
@@ -58,13 +60,13 @@ private fun UserCollectComicSkeleton(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun UserCollectComicScreen(
-    userViewModel: UserViewModel = koinActivityViewModel()
+    userViewModel: UserViewModel = koinActivityViewModel(),
+    showScaffold: Boolean = true
 ) {
     val collectComicLazyPagingItems = userViewModel.collectComicPager.collectAsLazyPagingItems()
     val order by userViewModel.collectComicOrder.collectAsState()
-    CommonScaffold(
-        title = "我的收藏",
-    ) {
+
+    val content: @Composable () -> Unit = {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -93,7 +95,7 @@ fun UserCollectComicScreen(
                 UserCollectComicSkeleton(
                     modifier = Modifier.weight(1f)
                 )
-                return@CommonScaffold
+                return@Column
             }
             PullRefreshAndLoadMoreGrid(
                 modifier = Modifier.weight(1f),
@@ -104,5 +106,15 @@ fun UserCollectComicScreen(
                 Comic(it)
             }
         }
+    }
+
+    if (showScaffold) {
+        CommonScaffold(
+            title = "我的收藏",
+        ) {
+            content()
+        }
+    } else {
+        content()
     }
 }

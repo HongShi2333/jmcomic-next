@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -47,7 +48,9 @@ import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil.ImageLoader
 import coil.compose.AsyncImage
+import com.par9uet.jm.database.dao.ReadingProgressDao
 import com.par9uet.jm.database.model.DownloadComic
+import com.par9uet.jm.database.model.ReadingProgress
 import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.DownloadComicDetailViewModel
@@ -71,7 +74,8 @@ fun DownloadComicDetailScreen(
     id: Int,
     viewModel: DownloadComicDetailViewModel = koinViewModel(),
     imageLoader: ImageLoader = getKoin().get(),
-    toastManager: ToastManager = getKoin().get()
+    toastManager: ToastManager = getKoin().get(),
+    readingProgressDao: ReadingProgressDao = getKoin().get()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -80,6 +84,7 @@ fun DownloadComicDetailScreen(
     val scrollState = rememberScrollState()
     var cachedInfo by remember { mutableStateOf<CachedComicInfo?>(null) }
     var exporting by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf<ReadingProgress?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -114,6 +119,13 @@ fun DownloadComicDetailScreen(
     }
     LaunchedEffect(comic) {
         cachedInfo = comic?.let { withContext(Dispatchers.IO) { getCachedComicInfo(context, it) } }
+        // Load reading progress
+        comic?.let { downloadComic ->
+            progress = withContext(Dispatchers.IO) {
+                val parentId = if (downloadComic.parentId != 0) downloadComic.parentId else downloadComic.id
+                readingProgressDao.getProgress(parentId)
+            }
+        }
     }
 
     Scaffold(
@@ -139,13 +151,24 @@ fun DownloadComicDetailScreen(
                         }
                     }
                     Spacer(modifier = Modifier.weight(1f))
+
+                    // Show reading progress if available
+                    val progressText = progress?.let {
+                        "上次读到第${it.pageIndex + 1}/${it.totalPages}页"
+                    }
+
                     Button(
                         contentPadding = PaddingValues(horizontal = 22.dp),
                         onClick = {
                             mainNavController.navigate("localComicRead/${data.id}")
                         }
                     ) {
-                        Text("阅读缓存")
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(if (progressText != null) "继续阅读" else "阅读缓存")
+                            if (progressText != null) {
+                                Text(progressText, fontSize = 10.sp)
+                            }
+                        }
                     }
                 }
             }

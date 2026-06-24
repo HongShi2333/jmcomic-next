@@ -48,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,7 @@ import com.par9uet.jm.store.DownloadManager
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
+import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.getKoin
 
@@ -79,6 +81,7 @@ fun ComicReadScreen(
     downloadManager: DownloadManager = getKoin().get()
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val mainNavController = LocalMainNavController.current
     val isShowToolbar by comicReadViewModel.isShowToolBar
     val size = comicReadViewModel.size
@@ -149,11 +152,23 @@ fun ComicReadScreen(
     }
 
     LaunchedEffect(comicId) {
-        val onSuccess = {
-            currentIndexState = 0
-            targetIndex = 0
-            zoomState.reset()
-            comicReadViewModel.decodeIndex(0, context)
+        val onSuccess: () -> Unit = {
+            // Try to restore progress after images are loaded
+            coroutineScope.launch {
+                val savedPageIndex = comicReadViewModel.restoreProgress(comicId, localOnly)
+                if (savedPageIndex != null && savedPageIndex > 0) {
+                    currentIndexState = savedPageIndex
+                    targetIndex = savedPageIndex
+                    zoomState.reset()
+                    comicReadViewModel.decodeIndex(savedPageIndex, context)
+                } else {
+                    currentIndexState = 0
+                    targetIndex = 0
+                    zoomState.reset()
+                    comicReadViewModel.decodeIndex(0, context)
+                }
+            }
+            Unit
         }
         if (localOnly) {
             comicReadViewModel.loadLocalComicChapters(comicId)
@@ -187,9 +202,18 @@ fun ComicReadScreen(
             controller?.hide(WindowInsetsCompat.Type.statusBars())
         }
     }
+
+    // Auto-save progress when page changes
+    LaunchedEffect(currentIndexState) {
+        if (!loading && currentIndexState > 0) {
+            comicReadViewModel.autoSaveProgress()
+        }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             controller?.show(WindowInsetsCompat.Type.statusBars())
+            comicReadViewModel.onReadingExit()
         }
     }
 

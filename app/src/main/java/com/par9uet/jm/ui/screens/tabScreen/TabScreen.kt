@@ -17,6 +17,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.par9uet.jm.ui.screens.AiChatScreen
 import com.par9uet.jm.ui.screens.HomeScreen
+import com.par9uet.jm.ui.screens.UserCollectComicScreen
 import com.par9uet.jm.ui.screens.UserScreen
 
 @Composable
@@ -45,6 +46,9 @@ fun TabScreen(tabName: String) {
             ) {
                 composable("home") {
                     HomeScreen()
+                }
+                composable("collect") {
+                    UserCollectComicScreen(showScaffold = false)
                 }
                 composable("user") {
                     UserScreen()

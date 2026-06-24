@@ -13,6 +13,6 @@ val comicModule = module {
     single { ComicRepositoryImpl(get(), get()) } bind ComicRepository::class
 
     viewModel { ComicViewModel(get()) }
-    viewModel { ComicDetailViewModel(get(), get(), get(), get()) }
-    viewModel { ComicReadViewModel(get(), get(), get(), get(), get()) }
+    viewModel { ComicDetailViewModel(get(), get(), get(), get(), get()) }
+    viewModel<ComicReadViewModel> { ComicReadViewModel(get(), get(), get(), get(), get(), get(), get()) }
 }

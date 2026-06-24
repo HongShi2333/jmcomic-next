@@ -7,6 +7,8 @@ import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.database.dao.DownloadComicDao
+import com.par9uet.jm.database.dao.ReadingProgressDao
+import com.par9uet.jm.database.model.ReadingProgress
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
@@ -29,6 +31,7 @@ class ComicDetailViewModel(
     private val comicRepository: ComicRepository,
     private val toastManager: ToastManager,
     private val downloadComicDao: DownloadComicDao,
+    private val readingProgressDao: ReadingProgressDao,
     private val remoteSettingManager: RemoteSettingManager,
 ) : ViewModel() {
     private val _comicDetailState = MutableStateFlow<CommonUIState<Comic>>(
@@ -37,6 +40,15 @@ class ComicDetailViewModel(
         )
     )
     val comicDetailState = _comicDetailState.asStateFlow()
+
+    private val _readingProgressState = MutableStateFlow<ReadingProgress?>(null)
+    val readingProgressState = _readingProgressState.asStateFlow()
+
+    fun loadReadingProgress(comicId: Int) {
+        viewModelScope.launch {
+            _readingProgressState.value = readingProgressDao.getProgress(comicId)
+        }
+    }
 
     fun getComicDetail(id: Int) {
         viewModelScope.launch {

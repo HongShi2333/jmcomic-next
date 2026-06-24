@@ -47,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import com.par9uet.jm.database.model.DownloadComic
+import com.par9uet.jm.database.model.ChapterProgress
+import com.par9uet.jm.database.model.ReadingProgress
 import com.par9uet.jm.ui.viewModel.DownloadComicGroup
 import com.par9uet.jm.utils.shimmer
 import org.koin.compose.getKoin
@@ -82,6 +84,8 @@ fun DownloadGroupRowItem(
     expanded: Boolean,
     editing: Boolean,
     selected: Boolean,
+    readingProgress: ReadingProgress? = null,
+    chapterProgressMap: Map<Int, ChapterProgress> = emptyMap(),
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onExpandClick: () -> Unit,
@@ -89,10 +93,7 @@ fun DownloadGroupRowItem(
     onChapterClick: ((DownloadComic) -> Unit)? = null
 ) {
     Card(
-        modifier = modifier.combinedClickable(
-            onClick = onClick,
-            onLongClick = onLongClick
-        ),
+        modifier = modifier,
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
     ) {
@@ -100,6 +101,10 @@ fun DownloadGroupRowItem(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick
+                    )
                     .padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -145,7 +150,8 @@ fun DownloadGroupRowItem(
                     modifier = Modifier
                         .width(82.dp)
                         .fillMaxHeight(),
-                    group = group
+                    group = group,
+                    readingProgress = readingProgress
                 )
                 if (group.chapterSize > 1) {
                     IconButton(onClick = onExpandClick) {
@@ -171,6 +177,7 @@ fun DownloadGroupRowItem(
                 group.sortedChapters.forEach { chapter ->
                     DownloadChapterRow(
                         chapter = chapter,
+                        chapterProgress = chapterProgressMap[chapter.id],
                         onClick = onChapterClick?.let { click ->
                             { click(chapter) }
                         }
@@ -184,6 +191,7 @@ fun DownloadGroupRowItem(
 @Composable
 private fun DownloadChapterRow(
     chapter: DownloadComic,
+    chapterProgress: ChapterProgress? = null,
     onClick: (() -> Unit)?
 ) {
     val rowModifier = if (onClick == null) {
@@ -218,22 +226,61 @@ private fun DownloadChapterRow(
                 )
             }
         }
-        Text(
-            text = chapterStatusText(chapter),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (chapter.status == "error") {
-                MaterialTheme.colorScheme.error
+        // Show reading progress if chapter is complete
+        if (chapter.status == "complete") {
+            if (chapterProgress != null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (chapterProgress.isCompleted) {
+                        Icon(
+                            imageVector = Icons.Rounded.CheckCircleOutline,
+                            contentDescription = "已读完",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Text(
+                        text = if (chapterProgress.isCompleted) {
+                            "已读完"
+                        } else {
+                            "${chapterProgress.pageIndex + 1}/${chapterProgress.totalPages}页"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (chapterProgress.isCompleted) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    text = chapterStatusText(chapter),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        )
+        } else {
+            Text(
+                text = chapterStatusText(chapter),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (chapter.status == "error") {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
     }
 }
 
 @Composable
 private fun DownloadGroupStateBlock(
     modifier: Modifier,
-    group: DownloadComicGroup
+    group: DownloadComicGroup,
+    readingProgress: ReadingProgress? = null
 ) {
     Column(
         modifier = modifier,
@@ -297,16 +344,38 @@ private fun DownloadGroupStateBlock(
             }
 
             group.completeCount == group.chapterSize -> {
+                // Show reading progress: "第X话" and "第Y页" on separate lines
                 Icon(
                     imageVector = Icons.Rounded.CheckCircleOutline,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary
                 )
-                Text(
-                    text = "已完成",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                if (readingProgress != null) {
+                    // Extract chapter number from chapterName (e.g., "第3话" from "第3话 · 标题")
+                    val chapterNumber = readingProgress.chapterName
+                        .replace(Regex("第\\s*(\\d+)\\s*[话話回集].*"), "第$1话")
+                        .takeIf { it.contains("第") && it.contains("话") }
+                        ?: "第1话"
+
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = chapterNumber,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "第${readingProgress.pageIndex + 1}页",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "未阅读",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
             else -> {

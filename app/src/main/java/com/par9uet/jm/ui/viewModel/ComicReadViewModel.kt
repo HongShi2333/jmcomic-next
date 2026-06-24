@@ -11,6 +11,8 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.data.models.ComicPicImageState
 import com.par9uet.jm.database.dao.DownloadComicDao
+import com.par9uet.jm.database.dao.ReadingProgressDao
+import com.par9uet.jm.database.dao.ChapterProgressDao
 import com.par9uet.jm.database.model.DownloadComic
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.CollectComicResponse
@@ -36,6 +38,8 @@ class ComicReadViewModel(
     private val picImageLoader: ImageLoader,
     private val localSettingManager: LocalSettingManager,
     private val downloadComicDao: DownloadComicDao,
+    private val readingProgressDao: ReadingProgressDao,
+    private val chapterProgressDao: ChapterProgressDao,
     private val toastManager: ToastManager,
 ) : ViewModel() {
     var isShowToolBar = mutableStateOf(false)
@@ -54,6 +58,12 @@ class ComicReadViewModel(
     val size: Int get() = _comicPicState.value.data?.size ?: 0
 
     private val prefetchSet = mutableSetOf<Int>()
+
+    // Reading progress tracking
+    private var currentComicId: Int = 0
+    private var currentIsLocal: Boolean = false
+    private var lastSaveTime = 0L
+    private val SAVE_DEBOUNCE_MS = 3000L
 
     fun getComicDetail(comicId: Int) {
         viewModelScope.launch {
@@ -337,6 +347,7 @@ class ComicReadViewModel(
         val index = max(0, currentIndexState.intValue - 1)
         currentIndexState.intValue = index
         decodeIndex(index, context)
+        autoSaveProgress()
     }
 
     fun next(context: Context) {
@@ -344,6 +355,7 @@ class ComicReadViewModel(
         val index = min(size - 1, currentIndexState.intValue + 1)
         currentIndexState.intValue = index
         decodeIndex(index, context)
+        autoSaveProgress()
     }
 
     private fun decode(index: Int, context: Context, onComplete: (() -> Unit)? = null) {
@@ -369,6 +381,104 @@ class ComicReadViewModel(
 
     fun showToolBar() {
         isShowToolBar.value = true
+    }
+
+    // Reading progress management
+    suspend fun loadSavedProgress(comicId: Int): com.par9uet.jm.database.model.ReadingProgress? {
+        return readingProgressDao.getProgress(comicId)
+    }
+
+    fun autoSaveProgress() {
+        val now = System.currentTimeMillis()
+        if (now - lastSaveTime < SAVE_DEBOUNCE_MS) return
+        lastSaveTime = now
+
+        saveProgress()
+    }
+
+    private fun saveProgress() {
+        viewModelScope.launch {
+            val comic = _comicDetailState.value.data ?: return@launch
+            val picList = _comicPicState.value.data ?: return@launch
+            if (picList.isEmpty()) return@launch
+
+            val currentPage = currentIndexState.intValue
+            val chapterId = if (currentIsLocal) {
+                currentComicId
+            } else {
+                if (comic.comicChapterList.isEmpty()) comic.id else currentComicId
+            }
+
+            val chapterName = if (currentIsLocal) {
+                downloadComicDao.getById(currentComicId)?.let { buildChapterName(it) } ?: ""
+            } else {
+                comic.comicChapterList.find { it.id == chapterId }?.name ?: comic.name
+            }
+
+            val coverPath = if (currentIsLocal) {
+                downloadComicDao.getById(currentComicId)?.coverPath ?: ""
+            } else {
+                ""
+            }
+
+            val parentComicId = if (currentIsLocal) {
+                downloadComicDao.getById(currentComicId)?.let {
+                    if (it.parentId != 0) it.parentId else it.id
+                } ?: currentComicId
+            } else {
+                comic.id
+            }
+
+            // Save to ReadingProgress (for "Continue Reading" feature)
+            val progress = com.par9uet.jm.database.model.ReadingProgress(
+                comicId = parentComicId,
+                chapterId = chapterId,
+                chapterName = chapterName,
+                pageIndex = currentPage,
+                totalPages = picList.size,
+                lastReadTime = System.currentTimeMillis(),
+                isLocal = currentIsLocal,
+                comicName = comic.name,
+                comicCover = coverPath
+            )
+            readingProgressDao.saveProgress(progress)
+
+            // Save to ChapterProgress (for per-chapter progress display)
+            val chapterProgress = com.par9uet.jm.database.model.ChapterProgress(
+                chapterId = chapterId,
+                comicId = parentComicId,
+                chapterName = chapterName,
+                pageIndex = currentPage,
+                totalPages = picList.size,
+                lastReadTime = System.currentTimeMillis(),
+                isCompleted = currentPage >= picList.size - 1
+            )
+            chapterProgressDao.saveProgress(chapterProgress)
+        }
+    }
+
+    suspend fun restoreProgress(comicId: Int, isLocal: Boolean): Int? {
+        currentComicId = comicId
+        currentIsLocal = isLocal
+
+        val savedProgress = readingProgressDao.getProgress(
+            if (isLocal) {
+                downloadComicDao.getById(comicId)?.let {
+                    if (it.parentId != 0) it.parentId else it.id
+                } ?: comicId
+            } else {
+                comicId
+            }
+        )
+        return if (savedProgress != null && savedProgress.chapterId == comicId) {
+            savedProgress.pageIndex
+        } else {
+            null
+        }
+    }
+
+    fun onReadingExit() {
+        saveProgress()
     }
 }
 

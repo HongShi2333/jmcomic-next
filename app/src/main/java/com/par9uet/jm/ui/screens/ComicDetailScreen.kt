@@ -242,6 +242,7 @@ fun ComicDetailScreen(
     val mainNavController = LocalMainNavController.current
     val scrollState = rememberScrollState()
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
+    val readingProgress by comicDetailViewModel.readingProgressState.collectAsState()
     var showDownloadDialog by remember { mutableStateOf(false) }
     var selectedDownloadChapterIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
 
@@ -250,6 +251,7 @@ fun ComicDetailScreen(
             return@LaunchedEffect
         }
         comicDetailViewModel.getComicDetail(id)
+        comicDetailViewModel.loadReadingProgress(id)
     }
 
     if (comicDetailState.isLoading && comicDetailState.data == null) {
@@ -353,7 +355,29 @@ fun ComicDetailScreen(
                         }
                     }
                     Spacer(modifier = Modifier.weight(1f))
-                    if (comic.comicChapterList.isEmpty()) {
+
+                    // Show "Continue Reading" if progress exists, otherwise show "Start Reading" or chapter buttons
+                    val progress = readingProgress
+                    if (progress != null && progress.pageIndex > 0) {
+                        // Has reading progress: show "Continue Reading"
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "上次读到 ${progress.chapterName} 第${progress.pageIndex + 1}/${progress.totalPages}页",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(onClick = {
+                                val route = if (progress.isLocal) {
+                                    "localComicRead/${progress.chapterId}"
+                                } else {
+                                    "comicRead/${progress.chapterId}"
+                                }
+                                mainNavController.navigate(route)
+                            }) {
+                                Text("继续阅读")
+                            }
+                        }
+                    } else if (comic.comicChapterList.isEmpty()) {
                         Button(onClick = {
                             mainNavController.navigate("comicRead/${comic.id}")
                         }) {

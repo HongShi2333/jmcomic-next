@@ -56,6 +56,19 @@ fun BottomNavigationBarComponent() {
                 colors = itemColors,
                 icon = {
                     Icon(
+                        painterResource(R.drawable.favorite_icon),
+                        contentDescription = "我的收藏"
+                    )
+                },
+                selected = currentRoute == "collect",
+                onClick = {
+                    navigate("collect")
+                }
+            )
+            NavigationBarItem(
+                colors = itemColors,
+                icon = {
+                    Icon(
                         Icons.Rounded.Psychology,
                         contentDescription = "AI 对话"
                     )

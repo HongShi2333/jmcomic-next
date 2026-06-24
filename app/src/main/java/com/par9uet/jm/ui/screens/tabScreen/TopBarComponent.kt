@@ -50,6 +50,26 @@ private fun UserTopBarComponent() {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CollectTopBarComponent() {
+    TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        title = {
+            Text(
+                "我的收藏",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        actions = {}
+    )
+}
+
 @Composable
 fun TopBarComponent() {
     val tabNavController = LocalTabNavController.current
@@ -57,6 +77,7 @@ fun TopBarComponent() {
     val currentRoute = backStackEntryState?.destination?.route
     when (currentRoute) {
         "home" -> HomeTopBarComponent()
+        "collect" -> CollectTopBarComponent()
         "user" -> UserTopBarComponent()
     }
 }

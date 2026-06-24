@@ -19,11 +19,13 @@ val databaseModule = module {
             AppDatabase::class.java,
             "app_database"
         )
-            .addMigrations(AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .fallbackToDestructiveMigration(false)
             .build()
     }
     single { get<AppDatabase>().downloadComicDao() }
+    single { get<AppDatabase>().readingProgressDao() }
+    single { get<AppDatabase>().chapterProgressDao() }
     single { DownloadManager(get(), get(), get(), get()) }
     viewModel { DownloadViewModel(get()) }
     viewModel { DownloadComicDetailViewModel(get()) }
