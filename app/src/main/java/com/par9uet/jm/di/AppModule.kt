@@ -30,6 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.bind
 import org.koin.dsl.module
+import org.koin.android.ext.koin.androidContext
 
 val appModule = module {
     single {
@@ -50,7 +51,7 @@ val appModule = module {
 
     single { UserManager(get(), get(), get(), get()) } bind AppInitTask::class
     single { RemoteSettingManager(get()) } bind AppInitTask::class
-    single { LocalSettingManager(get()) } bind AppInitTask::class
+    single { LocalSettingManager(get(), androidContext()) } bind AppInitTask::class
     single { HistorySearchManager(get()) } bind AppInitTask::class
     single { ToastManager() }
     single { DownloadToastAggregator(get()) }

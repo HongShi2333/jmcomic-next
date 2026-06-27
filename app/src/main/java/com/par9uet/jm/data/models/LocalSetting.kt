@@ -28,4 +28,6 @@ data class LocalSetting(
     val readMode: String = "scroll",
     val showComicScrollReadTip: Boolean = true,
     val showComicPageReadTip: Boolean = true,
+    val launcherDisguise: String = LauncherDisguise.DEFAULT.id,
+    val launcherDisguiseList: List<String> = LauncherDisguise.ids,
 )

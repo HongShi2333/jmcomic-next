@@ -1,6 +1,9 @@
 package com.par9uet.jm.store
 
+import android.content.Context
+import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.launcher.LauncherDisguiseApplier
 import com.par9uet.jm.storage.LocalSettingStorage
 import com.par9uet.jm.task.AppInitTask
 import com.par9uet.jm.task.AppTaskInfo
@@ -10,7 +13,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 class LocalSettingManager(
-    private val localSettingStorage: LocalSettingStorage
+    private val localSettingStorage: LocalSettingStorage,
+    private val context: Context,
 ) : AppInitTask {
     private val _localSettingState = MutableStateFlow(LocalSetting())
     val localSettingState = _localSettingState.asStateFlow()
@@ -60,6 +64,15 @@ class LocalSettingManager(
         localSettingStorage.set(_localSettingState.value)
     }
 
+    fun updateLauncherDisguise(disguiseId: String) {
+        val disguise = LauncherDisguise.fromId(disguiseId)
+        _localSettingState.update {
+            it.copy(launcherDisguise = disguise.id)
+        }
+        localSettingStorage.set(_localSettingState.value)
+        LauncherDisguiseApplier.apply(context, disguise)
+    }
+
     fun closeShowComicScrollReadTip() {
         _localSettingState.update {
             it.copy(
@@ -88,6 +101,8 @@ class LocalSettingManager(
         _localSettingState.update {
             localSettingStorage.get()
         }
+        val disguise = LauncherDisguise.fromId(_localSettingState.value.launcherDisguise)
+        LauncherDisguiseApplier.apply(context, disguise)
         log("已加载本地应用设置")
         log("本地应用设置初始化结束")
     }
