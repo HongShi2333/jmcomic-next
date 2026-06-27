@@ -1,10 +1,18 @@
 # JMcomic Next
 
-<img src=".\app\src\main\res\mipmap-mdpi\logo.webp" alt="logo" style="zoom:200%;" />
+<img src=".\app\src\main\res\mipmap-hdpi\logo_round.webp" alt="logo" style="zoom:200%;" />
+
+#### ⚠️⚠️本项目含有NSFW内容，请酌情观看⚠️⚠️
 
 JMcomic Next 是一个基于 Kotlin、Jetpack Compose 与 Material 3 构建的 Android 漫画客户端。项目由 `Dedicatus546/jm-mobile` 二次开源整理而来，当前仓库在原项目基础上继续维护移动端界面、阅读体验、本地缓存、下载管理、PDF 导出与 AI 对话等功能。
 
-感谢[LINUX DO社区](https://linux.do)中为我出主意的佬友们。以及对本项目提供大力支持的[RawChat团队](https://linux.do/u/RawChat)，没有各位的支持，这个项目不可能出现，由衷感谢各位！
+感谢[LINUX DO论坛](https://linux.do)以及对本项目提供大力支持的[RawChat团队](https://linux.do/u/RawChat)，没有各位的支持，这个项目不可能出现，由衷感谢各位！
+
+Linux.do提供建议的佬友们：[dijunwanshou](https://linux.do/u/dijunwanshou/summary)、[zeroLin](https://linux.do/u/zerolin/summary)、[dunxuan](https://linux.do/u/dunxuan/summary)、[lyston](https://linux.do/u/lyston/summary)、[catnap](https://linux.do/u/catnap/summary)、[JasonGui](https://linux.do/u/jasongui/summary)、[sswh317](https://linux.do/u/sswh317/summary)、[Jealousy](https://linux.do/u/jealousy/summary)
+
+Github提交issue的各位：[yinshu2002](https://github.com/yinshu2002)、[lyston11 (lyston)](https://github.com/lyston11)、[Nines70 (Lpublic)](https://github.com/Nines70)、[lin39c5bb](https://github.com/lin39c5bb)
+
+由衷感谢[Jea1ousy (DB)](https://github.com/Jea1ousy)、[linze0721 (萧瑟)](https://github.com/linze0721)为本项目添砖加瓦！
 
 项目的主要目标是把传统 Android 漫画客户端改造成更贴近现代 Android 设计习惯的 Compose 应用：页面使用 Material You 风格，入口和阅读流程尽量简洁，网络请求、登录状态、本地设置与缓存数据通过较清晰的 Repository、Manager、Storage、ViewModel 分层组织。
 
