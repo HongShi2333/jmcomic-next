@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +27,7 @@ import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.FilterItem
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.ui.viewModel.ComicViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -107,7 +107,7 @@ fun ComicSearchResultScreen(
                 modifier = Modifier.weight(1f),
                 lazyPagingItems = comicSearchLazyPagingItems,
                 key = { it.id },
-                columns = GridCells.Fixed(3),
+                columns = adaptiveComicGridCells(),
             ) {
                 Comic(it)
             }

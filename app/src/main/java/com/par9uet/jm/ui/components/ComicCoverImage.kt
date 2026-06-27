@@ -25,12 +25,13 @@ import org.koin.compose.getKoin
 @Composable
 fun ComicCoverImage(
     comic: Comic,
+    modifier: Modifier = Modifier.fillMaxWidth(),
     showIdChip: Boolean = false,
     remoteSettingManager: RemoteSettingManager = getKoin().get(),
     imageLoader: ImageLoader = getKoin().get()
 ) {
     val remoteSetting by remoteSettingManager.remoteSettingState.collectAsState()
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = modifier) {
         AsyncImage(
             model = "${remoteSetting.imgHost}/media/albums/${comic.id}_3x4.jpg",
             imageLoader = imageLoader,

@@ -9,14 +9,13 @@ data class DownloadComic(
     val id: Int,
     val name: String,
     val authorList: List<String>,
+    val tagList: List<String> = emptyList(),
     val coverPath: String,
     val zipPath: String,
     val progress: Float,
     val status: String, // pending || downloading || complete
     val createTime: Long,
-    val parentId: Int = id,
-    val parentName: String = name,
-    val chapterIndex: Int = 0,
+    val groupId: Int = 0,
+    val groupName: String = "",
     val chapterName: String = "",
-    val chapterCount: Int = 1,
 )

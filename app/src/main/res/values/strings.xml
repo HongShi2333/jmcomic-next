@@ -1,10 +1,6 @@
 <resources>
     <string name="app_name">JMcomic</string>
-    <string name="launcher_disguise_label_tools">系统工具</string>
-    <string name="launcher_disguise_label_gallery">相册</string>
-    <string name="launcher_disguise_setting_title">图标伪装</string>
-    <string name="launcher_disguise_default">默认（JMcomic）</string>
-    <string name="launcher_disguise_tools">系统工具</string>
+    <string name="launcher_disguise_default">JMcomic</string>
+    <string name="launcher_disguise_system_tools">系统工具</string>
     <string name="launcher_disguise_gallery">相册</string>
-    <string name="launcher_disguise_hint">更换桌面图标与名称，降低他人注意</string>
 </resources>

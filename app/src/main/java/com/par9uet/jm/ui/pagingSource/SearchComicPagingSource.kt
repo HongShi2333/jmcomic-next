@@ -7,6 +7,7 @@ import com.par9uet.jm.data.models.ComicSearchOrderFilter
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.ComicListResponse
 import com.par9uet.jm.retrofit.model.NetWorkResult
+import com.par9uet.jm.utils.filterBlockedTags
 
 data class SearchComicFilter(
     val order: ComicSearchOrderFilter = ComicSearchOrderFilter.NEWEST,
@@ -25,6 +26,7 @@ data class ParsedSearchQuery(
 class SearchComicPagingSource(
     private val comicRepository: ComicRepository,
     private val filter: SearchComicFilter,
+    private val blockedTagList: List<String> = listOf(),
     private val onFindSingleComicId: (id: Int?) -> Unit = {}
 ) : PagingSource<Int, Comic>() {
     companion object {
@@ -54,6 +56,7 @@ class SearchComicPagingSource(
                 } else {
                     onFindSingleComicId(null)
                     val list = applyTagFilter(data.data.toComicList(), parsedQuery)
+                        .filterBlockedTags(blockedTagList)
                     val total = data.data.total.toInt()
                     val isLastPage = currentPage >= (total + params.loadSize - 1) / params.loadSize
                     LoadResult.Page(

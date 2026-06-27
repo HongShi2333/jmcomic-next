@@ -1,12 +1,13 @@
 package com.par9uet.jm.store
 
-import android.content.Context
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
-import com.par9uet.jm.launcher.LauncherDisguiseApplier
 import com.par9uet.jm.storage.LocalSettingStorage
 import com.par9uet.jm.task.AppInitTask
 import com.par9uet.jm.task.AppTaskInfo
+import com.par9uet.jm.utils.LauncherDisguiseApplier
+import com.par9uet.jm.utils.normalizeBlockedTag
+import com.par9uet.jm.utils.normalizeBlockedTagList
 import com.par9uet.jm.utils.log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,7 +15,7 @@ import kotlinx.coroutines.flow.update
 
 class LocalSettingManager(
     private val localSettingStorage: LocalSettingStorage,
-    private val context: Context,
+    private val launcherDisguiseApplier: LauncherDisguiseApplier,
 ) : AppInitTask {
     private val _localSettingState = MutableStateFlow(LocalSetting())
     val localSettingState = _localSettingState.asStateFlow()
@@ -64,15 +65,6 @@ class LocalSettingManager(
         localSettingStorage.set(_localSettingState.value)
     }
 
-    fun updateLauncherDisguise(disguiseId: String) {
-        val disguise = LauncherDisguise.fromId(disguiseId)
-        _localSettingState.update {
-            it.copy(launcherDisguise = disguise.id)
-        }
-        localSettingStorage.set(_localSettingState.value)
-        LauncherDisguiseApplier.apply(context, disguise)
-    }
-
     fun closeShowComicScrollReadTip() {
         _localSettingState.update {
             it.copy(
@@ -90,6 +82,87 @@ class LocalSettingManager(
         }
         localSettingStorage.set(_localSettingState.value)
     }
+
+    fun updateReadTapMode(readTapMode: String) {
+        _localSettingState.update {
+            it.copy(
+                readTapMode = readTapMode
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+    }
+
+    fun updateLauncherDisguise(launcherDisguise: String) {
+        val disguise = LauncherDisguise.fromId(launcherDisguise)
+        _localSettingState.update {
+            it.copy(
+                launcherDisguise = disguise.id
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+        launcherDisguiseApplier.apply(disguise)
+    }
+
+    fun updateNotificationSettings(show: Boolean, showName: Boolean) {
+        _localSettingState.update {
+            it.copy(
+                showComicCacheNotification = show,
+                showComicCacheNotificationName = show && showName
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+    }
+
+    fun updateShowComicCacheNotification(show: Boolean) {
+        _localSettingState.update {
+            it.copy(
+                showComicCacheNotification = show
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+    }
+
+    fun updateShowComicCacheNotificationName(show: Boolean) {
+        _localSettingState.update {
+            it.copy(
+                showComicCacheNotificationName = show
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+    }
+
+    fun addBlockedTag(tag: String) {
+        val normalizedTag = normalizeBlockedTag(tag)
+        if (normalizedTag.isBlank()) return
+        _localSettingState.update {
+            it.copy(
+                blockedTagList = normalizeBlockedTagList(it.blockedTagList + normalizedTag)
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+    }
+
+    fun replaceBlockedTags(tags: List<String>) {
+        _localSettingState.update {
+            it.copy(
+                blockedTagList = normalizeBlockedTagList(tags)
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+    }
+
+    fun removeBlockedTag(tag: String) {
+        val normalizedTag = normalizeBlockedTag(tag)
+        _localSettingState.update {
+            it.copy(
+                blockedTagList = it.blockedTagList.filterNot { item ->
+                    item.equals(normalizedTag, ignoreCase = true)
+                }
+            )
+        }
+        localSettingStorage.set(_localSettingState.value)
+    }
+
     private var appTaskInfo = AppTaskInfo(
         taskName = "加载本地 APP 设置",
         sort = 3,
@@ -101,8 +174,7 @@ class LocalSettingManager(
         _localSettingState.update {
             localSettingStorage.get()
         }
-        val disguise = LauncherDisguise.fromId(_localSettingState.value.launcherDisguise)
-        LauncherDisguiseApplier.apply(context, disguise)
+        launcherDisguiseApplier.apply(LauncherDisguise.fromId(_localSettingState.value.launcherDisguise))
         log("已加载本地应用设置")
         log("本地应用设置初始化结束")
     }

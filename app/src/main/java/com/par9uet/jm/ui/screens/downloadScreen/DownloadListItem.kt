@@ -3,7 +3,6 @@ package com.par9uet.jm.ui.screens.downloadScreen
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,28 +16,26 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.ExpandLess
-import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.HourglassEmpty
 import androidx.compose.material.icons.rounded.PauseCircleOutline
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProgressIndicatorDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,28 +43,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.ImageLoader
 import coil.compose.AsyncImage
-import com.par9uet.jm.database.model.DownloadComic
-import com.par9uet.jm.database.model.ChapterProgress
-import com.par9uet.jm.database.model.ReadingProgress
 import com.par9uet.jm.ui.viewModel.DownloadComicGroup
 import com.par9uet.jm.utils.shimmer
 import org.koin.compose.getKoin
 import java.io.File
 
-// Removed MAX_EXPANDED_CHAPTER_ROWS limit to show all chapters
-
 @Composable
-private fun ComicCoverImage(
-    comic: DownloadComic,
-    contentDescriptionName: String,
+private fun GroupCoverImage(
+    coverPath: String,
+    title: String,
     modifier: Modifier = Modifier,
     imageLoader: ImageLoader = getKoin().get()
 ) {
-    if (comic.coverPath.isNotBlank()) {
+    if (coverPath.isNotBlank()) {
         AsyncImage(
-            model = File(comic.coverPath),
+            model = File(coverPath),
             imageLoader = imageLoader,
-            contentDescription = "${contentDescriptionName}的封面",
+            contentDescription = "$title 的封面",
             contentScale = ContentScale.Crop,
             modifier = modifier,
         )
@@ -78,221 +70,169 @@ private fun ComicCoverImage(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun DownloadGroupRowItem(
+fun DownloadCoverGridItem(
     modifier: Modifier = Modifier,
     group: DownloadComicGroup,
-    expanded: Boolean,
     editing: Boolean,
     selected: Boolean,
-    readingProgress: ReadingProgress? = null,
-    chapterProgressMap: Map<Int, ChapterProgress> = emptyMap(),
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onExpandClick: () -> Unit,
-    onCancel: (() -> Unit)? = null,
-    onChapterClick: ((DownloadComic) -> Unit)? = null
+    onLongClick: () -> Unit
 ) {
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        modifier = modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        ),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = onClick,
-                        onLongClick = onLongClick
-                    )
-                    .padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+        Box {
+            Column(
+                modifier = Modifier.padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (editing) {
-                    Checkbox(checked = selected, onCheckedChange = null)
-                }
-                ComicCoverImage(
-                    comic = group.coverComic,
-                    contentDescriptionName = group.displayName,
+                GroupCoverImage(
+                    coverPath = group.coverPath,
+                    title = group.name,
                     modifier = Modifier
-                        .width(64.dp)
                         .aspectRatio(3f / 4f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                Text(
+                    text = group.name,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 2,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer
                 ) {
                     Text(
-                        text = group.displayName,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = group.authorList.joinToString(",").ifBlank { "暂无作者" },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        text = "已缓存 ${group.chapterCount} 章",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                    Text(
-                        text = groupSummary(group),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                DownloadGroupStateBlock(
-                    modifier = Modifier
-                        .width(82.dp)
-                        .fillMaxHeight(),
-                    group = group,
-                    readingProgress = readingProgress
-                )
-                if (group.chapterSize > 1) {
-                    IconButton(onClick = onExpandClick) {
-                        Icon(
-                            imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                            contentDescription = if (expanded) "折叠章节" else "展开章节",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                if (onCancel != null) {
-                    IconButton(onClick = onCancel) {
-                        Icon(
-                            imageVector = Icons.Rounded.Close,
-                            contentDescription = "移除任务",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             }
-            if (expanded && group.chapterSize > 1) {
-                HorizontalDivider()
-                group.sortedChapters.forEach { chapter ->
-                    DownloadChapterRow(
-                        chapter = chapter,
-                        chapterProgress = chapterProgressMap[chapter.id],
-                        onClick = onChapterClick?.let { click ->
-                            { click(chapter) }
-                        }
-                    )
-                }
+            if (editing) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = null,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DownloadChapterRow(
-    chapter: DownloadComic,
-    chapterProgress: ChapterProgress? = null,
-    onClick: (() -> Unit)?
+fun DownloadRowItem(
+    modifier: Modifier = Modifier,
+    group: DownloadComicGroup,
+    editing: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onCancel: () -> Unit
 ) {
-    val rowModifier = if (onClick == null) {
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 10.dp)
-    } else {
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 10.dp)
-    }
-    Row(
-        modifier = rowModifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    Card(
+        modifier = modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        ),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = chapterTitle(chapter),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
-            if (chapter.status == "downloading") {
-                LinearProgressIndicator(
-                    progress = { chapter.progress.coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp)
-                )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            if (editing) {
+                Checkbox(checked = selected, onCheckedChange = null)
             }
-        }
-        // Show reading progress if chapter is complete
-        if (chapter.status == "complete") {
-            if (chapterProgress != null) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (chapterProgress.isCompleted) {
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircleOutline,
-                            contentDescription = "已读完",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    Text(
-                        text = if (chapterProgress.isCompleted) {
-                            "已读完"
-                        } else {
-                            "${chapterProgress.pageIndex + 1}/${chapterProgress.totalPages}页"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (chapterProgress.isCompleted) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
-            } else {
+            GroupCoverImage(
+                coverPath = group.coverPath,
+                title = group.name,
+                modifier = Modifier
+                    .width(64.dp)
+                    .aspectRatio(3f / 4f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
                 Text(
-                    text = chapterStatusText(chapter),
+                    text = group.name,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = if (group.chapterCount > 1) {
+                        "共 ${group.chapterCount} 章"
+                    } else {
+                        group.authorList.joinToString(",").ifBlank { "暂无作者信息" }
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        } else {
-            Text(
-                text = chapterStatusText(chapter),
-                style = MaterialTheme.typography.labelMedium,
-                color = if (chapter.status == "error") {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+            DownloadStateBlock(
+                modifier = Modifier
+                    .width(92.dp)
+                    .fillMaxHeight(),
+                group = group
             )
+            IconButton(onClick = onCancel) {
+                Icon(
+                    imageVector = Icons.Rounded.Close,
+                    contentDescription = "删除缓存任务",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun DownloadGroupStateBlock(
+private fun DownloadStateBlock(
     modifier: Modifier,
-    group: DownloadComicGroup,
-    readingProgress: ReadingProgress? = null
+    group: DownloadComicGroup
 ) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterVertically)
     ) {
-        when {
-            group.downloadingCount > 0 -> {
+        when (group.status) {
+            "downloading" -> {
                 val animatedProgress by animateFloatAsState(
                     targetValue = group.progress.coerceIn(0f, 1f),
                     animationSpec = ProgressIndicatorDefaults.ProgressAnimationSpec,
-                    label = "groupProgressAnimation"
+                    label = "downloadProgressAnimation"
                 )
                 CircularProgressIndicator(
                     progress = { animatedProgress },
@@ -304,33 +244,7 @@ private fun DownloadGroupStateBlock(
                 )
             }
 
-            group.pendingCount > 0 -> {
-                Icon(
-                    imageVector = Icons.Rounded.HourglassEmpty,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "等待中",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            group.pausedCount > 0 -> {
-                Icon(
-                    imageVector = Icons.Rounded.PauseCircleOutline,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "已暂停",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            group.errorCount > 0 -> {
+            "error" -> {
                 Icon(
                     imageVector = Icons.Rounded.ErrorOutline,
                     contentDescription = null,
@@ -343,39 +257,17 @@ private fun DownloadGroupStateBlock(
                 )
             }
 
-            group.completeCount == group.chapterSize -> {
-                // Show reading progress: "第X话" and "第Y页" on separate lines
+            "paused" -> {
                 Icon(
-                    imageVector = Icons.Rounded.CheckCircleOutline,
+                    imageVector = Icons.Rounded.PauseCircleOutline,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (readingProgress != null) {
-                    // Extract chapter number from chapterName (e.g., "第3话" from "第3话 · 标题")
-                    val chapterNumber = readingProgress.chapterName
-                        .replace(Regex("第\\s*(\\d+)\\s*[话話回集].*"), "第$1话")
-                        .takeIf { it.contains("第") && it.contains("话") }
-                        ?: "第1话"
-
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = chapterNumber,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = "第${readingProgress.pageIndex + 1}页",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                } else {
-                    Text(
-                        text = "未阅读",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Text(
+                    text = "已暂停",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             else -> {
@@ -391,59 +283,11 @@ private fun DownloadGroupStateBlock(
                 )
             }
         }
-        if (group.downloadingCount > 0) {
+        if (group.status == "downloading") {
             LinearProgressIndicator(
                 progress = { group.progress.coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth()
             )
         }
-    }
-}
-
-private fun groupSummary(group: DownloadComicGroup): String {
-    val chapterText = if (group.totalChapters > group.chapterSize) {
-        "${group.chapterSize}/${group.totalChapters} 话"
-    } else {
-        "${group.chapterSize} 话"
-    }
-    val statusParts = buildList {
-        if (group.completeCount > 0) add("完成 ${group.completeCount}")
-        if (group.downloadingCount > 0) add("下载中 ${group.downloadingCount}")
-        if (group.pendingCount > 0) add("等待 ${group.pendingCount}")
-        if (group.pausedCount > 0) add("暂停 ${group.pausedCount}")
-        if (group.errorCount > 0) add("出错 ${group.errorCount}")
-    }
-    return (listOf(chapterText) + statusParts).joinToString(" · ")
-}
-
-private fun chapterTitle(chapter: DownloadComic): String {
-    val parsedTitle = chapter.name.chapterTitleFromName()
-    val numberText = when {
-        chapter.chapterCount > 1 || chapter.chapterIndex > 0 -> "第${chapter.chapterIndex + 1}话"
-        parsedTitle != null -> parsedTitle
-        else -> "单话"
-    }
-    return if (chapter.chapterName.isNotBlank() && chapter.chapterName != numberText) {
-        "$numberText · ${chapter.chapterName}"
-    } else {
-        numberText
-    }
-}
-
-private fun String.chapterTitleFromName(): String? {
-    return Regex("第\\s*\\d+\\s*[话話回集]")
-        .find(this)
-        ?.value
-        ?.replace(Regex("\\s+"), "")
-}
-
-private fun chapterStatusText(chapter: DownloadComic): String {
-    return when (chapter.status) {
-        "complete" -> "已完成"
-        "downloading" -> "${(chapter.progress.coerceIn(0f, 1f) * 100).toInt()}%"
-        "pending" -> "等待中"
-        "paused" -> "已暂停"
-        "error" -> "出错"
-        else -> chapter.status
     }
 }

@@ -26,13 +26,16 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.ImageResultState
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.ui.components.ComicPicImage
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
 import com.par9uet.jm.utils.log
+import org.koin.compose.getKoin
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 
@@ -44,14 +47,27 @@ fun ComicScrollRead(
     targetIndex: Int,
     zoomState: ReaderZoomState,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
+    localSettingManager: LocalSettingManager = getKoin().get(),
     onUpdateSliderValue: (value: Float) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var currentIndexState by comicReadViewModel.currentIndexState
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
+    val localSetting by localSettingManager.localSettingState.collectAsState()
     val list = comicPicState.data ?: listOf()
     val context = LocalContext.current
     var programmaticScroll by remember { mutableStateOf(false) }
+
+    fun scrollToCurrentPage() {
+        if (list.isEmpty()) return
+        val target = currentIndexState.coerceIn(0, list.lastIndex)
+        currentIndexState = target
+        coroutineScope.launch {
+            lazyListState.scrollToItem(target)
+            pagerState.scrollToPage(target)
+            onUpdateSliderValue(target.toFloat())
+        }
+    }
 
     LaunchedEffect(targetIndex, list.size) {
         if (list.isEmpty()) return@LaunchedEffect
@@ -73,9 +89,22 @@ fun ComicScrollRead(
                 }
         }
         launch {
+            snapshotFlow {
+                lazyListState.layoutInfo.visibleItemsInfo
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { it.first().index to it.last().index }
+            }
+                .filterNotNull()
+                .distinctUntilChanged()
+                .debounce(120)
+                .collect { (first, last) ->
+                    comicReadViewModel.decodeVisibleRange(first, last, context)
+                }
+        }
+        launch {
             snapshotFlow { lazyListState.firstVisibleItemIndex }
                 .distinctUntilChanged()
-                .debounce(1000)
+                .debounce(150)
                 .collect {
                     if (programmaticScroll) return@collect
                     log("lazyListState.firstVisibleItemIndex currentIndexState = $currentIndexState it = $it")
@@ -91,7 +120,7 @@ fun ComicScrollRead(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
+            .pointerInput(localSetting.readTapMode) {
                 awaitPointerEventScope {
                     while (true) {
                         // 1. 在 Initial 阶段观察按下，不消耗事件，确保 Pager 能收到
@@ -108,25 +137,29 @@ fun ComicScrollRead(
                             if (distance < 10.dp.toPx()) {
                                 // --- 获取点击位置 ---
                                 val screenHeight = size.height
+                                val screenWidth = size.width
                                 val clickY = up.position.y
+                                val clickX = up.position.x
 
                                 when {
-                                    clickY < screenHeight / 3 -> {
+                                    localSetting.readTapMode == "side" && clickX < screenWidth / 3 -> {
                                         comicReadViewModel.prev(context)
-                                        coroutineScope.launch {
-                                            lazyListState.scrollToItem(currentIndexState)
-                                            pagerState.scrollToPage(currentIndexState)
-                                            onUpdateSliderValue(currentIndexState.toFloat())
-                                        }
+                                        scrollToCurrentPage()
                                     }
 
-                                    clickY > screenHeight * 2 / 3 -> {
+                                    localSetting.readTapMode == "side" && clickX > screenWidth * 2 / 3 -> {
                                         comicReadViewModel.next(context)
-                                        coroutineScope.launch {
-                                            lazyListState.scrollToItem(currentIndexState)
-                                            pagerState.scrollToPage(currentIndexState)
-                                            onUpdateSliderValue(currentIndexState.toFloat())
-                                        }
+                                        scrollToCurrentPage()
+                                    }
+
+                                    localSetting.readTapMode != "side" && clickY < screenHeight / 3 -> {
+                                        comicReadViewModel.prev(context)
+                                        scrollToCurrentPage()
+                                    }
+
+                                    localSetting.readTapMode != "side" && clickY > screenHeight * 2 / 3 -> {
+                                        comicReadViewModel.next(context)
+                                        scrollToCurrentPage()
                                     }
 
                                     else -> {
@@ -141,10 +174,10 @@ fun ComicScrollRead(
     ) {
         LazyColumn(
             state = lazyListState,
-            userScrollEnabled = !zoomState.isZoomed,
+            userScrollEnabled = true,
             modifier = Modifier
                 .fillMaxSize()
-                .readerZoomable(zoomState)
+                .readerZoomable(zoomState, enableVerticalPan = false)
         ) {
             items(list, key = {
                 "${it.comicId}_${it.originSrc}"

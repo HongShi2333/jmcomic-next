@@ -22,10 +22,21 @@ class SecureStorage(
     }
 
     fun <T> get(key: String, type: java.lang.reflect.Type): T? {
+        return try {
+            getString(key)?.let {
+                gson.fromJson(it, type)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    fun getString(key: String): String? {
         val json = sharedPreferences.getString(key, null)
         return try {
             json?.let {
-                gson.fromJson(cryptoManager.decrypt(it), type)
+                cryptoManager.decrypt(it)
             }
         } catch (e: Exception) {
             e.printStackTrace()

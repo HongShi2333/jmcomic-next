@@ -32,26 +32,6 @@ private fun HomeTopBarComponent() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun UserTopBarComponent() {
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        title = {
-            Text(
-                "个人中心",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        actions = {}
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun CollectTopBarComponent() {
     TopAppBar(
         colors = TopAppBarDefaults.topAppBarColors(
@@ -62,6 +42,26 @@ private fun CollectTopBarComponent() {
         title = {
             Text(
                 "我的收藏",
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        actions = {}
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UserTopBarComponent() {
+    TopAppBar(
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        title = {
+            Text(
+                "个人中心",
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

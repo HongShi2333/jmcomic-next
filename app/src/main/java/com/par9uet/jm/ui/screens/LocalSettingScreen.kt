@@ -19,9 +19,9 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.par9uet.jm.data.models.LauncherDisguise
+import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SelectDialog
@@ -55,18 +57,18 @@ private sealed class SettingType {
     object Shunt : SettingType()
     object PrefetchCount : SettingType()
     object ReadMode : SettingType()
+    object ReadTapMode : SettingType()
+    object NotificationManagement : SettingType()
 }
+
+private const val NOTIFICATION_ON_WITH_NAME = "on_with_name"
+private const val NOTIFICATION_ON_WITHOUT_NAME = "on_without_name"
+private const val NOTIFICATION_OFF = "off"
 
 private val themeTextMap = mapOf(
     "auto" to "跟随系统",
     "light" to "日间模式",
     "dark" to "夜间模式",
-)
-
-private val launcherDisguiseTextMap = mapOf(
-    "default" to "默认（JMcomic）",
-    "launcher" to "系统工具",
-    "launcher_round" to "相册",
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,9 +101,9 @@ fun LocalSettingScreen(
                         onClick = { openSetting(SettingType.Theme) }
                     )
                     SettingsRow(
-                        icon = Icons.Rounded.VisibilityOff,
+                        icon = Icons.Rounded.Image,
                         title = "图标伪装",
-                        value = launcherDisguiseTextMap[localSetting.launcherDisguise].orEmpty(),
+                        value = LauncherDisguise.fromId(localSetting.launcherDisguise).label,
                         onClick = { openSetting(SettingType.LauncherDisguise) }
                     )
                 }
@@ -133,8 +135,24 @@ fun LocalSettingScreen(
                     SettingsRow(
                         icon = Icons.AutoMirrored.Rounded.MenuBook,
                         title = "阅读模式",
-                        value = if (localSetting.readMode == "scroll") "滚动模式" else "翻页模式",
+                        value = readModeText(localSetting.readMode),
                         onClick = { openSetting(SettingType.ReadMode) }
+                    )
+                    SettingsRow(
+                        icon = Icons.Rounded.Tune,
+                        title = "点击翻图",
+                        value = if (localSetting.readTapMode == "side") "左右两侧" else "默认区域",
+                        onClick = { openSetting(SettingType.ReadTapMode) }
+                    )
+                }
+            }
+            item {
+                SettingsSection(title = "通知") {
+                    SettingsRow(
+                        icon = Icons.Rounded.Notifications,
+                        title = "通知管理",
+                        value = notificationText(localSetting),
+                        onClick = { openSetting(SettingType.NotificationManagement) }
                     )
                 }
             }
@@ -171,10 +189,10 @@ fun LocalSettingScreen(
                     }
                 }
             }
-            val launcherDisguiseOptionList by remember(localSetting.launcherDisguiseList) {
+            val launcherDisguiseOptionList by remember {
                 derivedStateOf {
-                    localSetting.launcherDisguiseList.map {
-                        SelectOption(launcherDisguiseTextMap[it].orEmpty(), it)
+                    LauncherDisguise.entries.map {
+                        SelectOption(it.label, it.id)
                     }
                 }
             }
@@ -199,7 +217,25 @@ fun LocalSettingScreen(
                 derivedStateOf {
                     listOf(
                         SelectOption("滚动模式", "scroll"),
-                        SelectOption("翻页模式", "page")
+                        SelectOption("翻页模式", "page"),
+                        SelectOption("点击模式", "tap")
+                    )
+                }
+            }
+            val readTapModeOptionList by remember {
+                derivedStateOf {
+                    listOf(
+                        SelectOption("默认区域", "default"),
+                        SelectOption("左右两侧", "side")
+                    )
+                }
+            }
+            val booleanOptionList by remember {
+                derivedStateOf {
+                    listOf(
+                        SelectOption("开启并显示漫画名", NOTIFICATION_ON_WITH_NAME),
+                        SelectOption("开启但不显示漫画名", NOTIFICATION_ON_WITHOUT_NAME),
+                        SelectOption("关闭通知", NOTIFICATION_OFF)
                     )
                 }
             }
@@ -213,6 +249,8 @@ fun LocalSettingScreen(
                     is SettingType.Shunt -> shuntOptionList
                     is SettingType.PrefetchCount -> prefetchCountOptionList
                     is SettingType.ReadMode -> readModeOptionList
+                    is SettingType.ReadTapMode -> readTapModeOptionList
+                    is SettingType.NotificationManagement -> booleanOptionList
                 },
                 onSelect = {
                     when (settingType) {
@@ -222,6 +260,13 @@ fun LocalSettingScreen(
                         is SettingType.Shunt -> localSettingManager.updateShunt(it)
                         is SettingType.PrefetchCount -> localSettingManager.updatePrefetchCount(it)
                         is SettingType.ReadMode -> localSettingManager.updateReadMode(it)
+                        is SettingType.ReadTapMode -> localSettingManager.updateReadTapMode(it)
+                        is SettingType.NotificationManagement -> {
+                            localSettingManager.updateNotificationSettings(
+                                show = it != NOTIFICATION_OFF,
+                                showName = it == NOTIFICATION_ON_WITH_NAME
+                            )
+                        }
                     }
                     isOpenSettingSelectDialog = false
                 },
@@ -322,6 +367,27 @@ private fun prefetchText(value: Int): String {
     }
 }
 
+private fun readModeText(value: String): String {
+    return when (value) {
+        "scroll" -> "滚动模式"
+        "page" -> "翻页模式"
+        "tap" -> "点击模式"
+        else -> "滚动模式"
+    }
+}
+
+private fun enabledText(value: Boolean): String {
+    return if (value) "开启" else "关闭"
+}
+
+private fun notificationText(localSetting: LocalSetting): String {
+    return when {
+        !localSetting.showComicCacheNotification -> "关闭通知"
+        localSetting.showComicCacheNotificationName -> "开启并显示漫画名"
+        else -> "开启但不显示漫画名"
+    }
+}
+
 private fun settingTitle(type: SettingType): String {
     return when (type) {
         is SettingType.Api -> "切换接口"
@@ -330,16 +396,24 @@ private fun settingTitle(type: SettingType): String {
         is SettingType.Shunt -> "线路选择"
         is SettingType.PrefetchCount -> "图片预载数量"
         is SettingType.ReadMode -> "阅读模式"
+        is SettingType.ReadTapMode -> "点击翻图"
+        is SettingType.NotificationManagement -> "通知管理"
     }
 }
 
-private fun settingValue(type: SettingType, localSetting: com.par9uet.jm.data.models.LocalSetting): String {
+private fun settingValue(type: SettingType, localSetting: LocalSetting): String {
     return when (type) {
         is SettingType.Api -> localSetting.api
         is SettingType.Theme -> localSetting.theme
-        is SettingType.LauncherDisguise -> localSetting.launcherDisguise
+        is SettingType.LauncherDisguise -> LauncherDisguise.fromId(localSetting.launcherDisguise).id
         is SettingType.Shunt -> localSetting.shunt
         is SettingType.PrefetchCount -> "${localSetting.prefetchCount}"
         is SettingType.ReadMode -> localSetting.readMode
+        is SettingType.ReadTapMode -> localSetting.readTapMode
+        is SettingType.NotificationManagement -> when {
+            !localSetting.showComicCacheNotification -> NOTIFICATION_OFF
+            localSetting.showComicCacheNotificationName -> NOTIFICATION_ON_WITH_NAME
+            else -> NOTIFICATION_ON_WITHOUT_NAME
+        }
     }
 }

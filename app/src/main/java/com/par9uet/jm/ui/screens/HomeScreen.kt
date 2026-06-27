@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +40,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,9 +51,12 @@ import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.TabSkeleton
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.UserManager
+import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.state.rememberTabIndexState
 import com.par9uet.jm.ui.viewModel.ComicViewModel
+import com.par9uet.jm.utils.filterBlockedTags
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 import kotlin.math.abs
@@ -102,11 +105,13 @@ private fun HomeSkeleton() {
 @Composable
 fun HomeScreen(
     comicViewModel: ComicViewModel = koinActivityViewModel(),
-    userManager: UserManager = getKoin().get()
+    userManager: UserManager = getKoin().get(),
+    localSettingManager: LocalSettingManager = getKoin().get()
 ) {
     val mainNavController = LocalMainNavController.current
     val homeComicState by comicViewModel.homeComicState.collectAsState()
     val isLogin by userManager.isLoginState.collectAsState(false)
+    val localSetting by localSettingManager.localSettingState.collectAsState()
     LaunchedEffect(Unit) {
         if (homeComicState.list.isNotEmpty()) {
             return@LaunchedEffect
@@ -124,7 +129,9 @@ fun HomeScreen(
     }
     Column(modifier = Modifier.fillMaxSize()) {
         val currentPageData = homeComicState.list.getOrNull(selectedTabIndexState.value)
-        val comicList = currentPageData?.list ?: listOf()
+        val comicList = remember(currentPageData, localSetting.blockedTagList) {
+            (currentPageData?.list ?: listOf()).filterBlockedTags(localSetting.blockedTagList)
+        }
         PullToRefreshBox(
             modifier = Modifier.fillMaxSize(),
             isRefreshing = homeComicState.isLoading,
@@ -157,7 +164,7 @@ fun HomeScreen(
                             }
                         }
                     },
-                columns = GridCells.Fixed(3),
+                columns = adaptiveComicGridCells(),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 16.dp)

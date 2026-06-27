@@ -10,18 +10,22 @@ import com.par9uet.jm.storage.AiChatStorage
 import com.par9uet.jm.storage.CookieStorage
 import com.par9uet.jm.storage.HistorySearchStorage
 import com.par9uet.jm.storage.LocalSettingStorage
+import com.par9uet.jm.storage.ReadHistoryStorage
 import com.par9uet.jm.storage.SecureStorage
 import com.par9uet.jm.storage.UserStorage
+import com.par9uet.jm.store.AppUpdateDownloadManager
 import com.par9uet.jm.store.DownloadToastAggregator
 import com.par9uet.jm.store.HistorySearchManager
 import com.par9uet.jm.store.InitManager
 import com.par9uet.jm.store.LocalSettingManager
+import com.par9uet.jm.store.ReadHistoryManager
 import com.par9uet.jm.store.RemoteSettingManager
 import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.task.AppInitTask
 import com.par9uet.jm.ui.viewModel.GlobalViewModel
 import com.par9uet.jm.ui.viewModel.AiChatViewModel
+import com.par9uet.jm.utils.LauncherDisguiseApplier
 import com.par9uet.jm.utils.log
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +34,6 @@ import kotlinx.coroutines.SupervisorJob
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.bind
 import org.koin.dsl.module
-import org.koin.android.ext.koin.androidContext
 
 val appModule = module {
     single {
@@ -44,18 +47,22 @@ val appModule = module {
     single { CookieStorage(get()) }
     single { LocalSettingStorage(get()) }
     single { HistorySearchStorage(get()) }
+    single { ReadHistoryStorage(get()) }
     single { AiChatStorage(get()) }
+    single { LauncherDisguiseApplier(get()) }
 
     single { RemoteSettingRepositoryImpl(get(), get()) } bind RemoteSettingRepository::class
     single { AiChatRepository(get()) }
 
     single { UserManager(get(), get(), get(), get()) } bind AppInitTask::class
     single { RemoteSettingManager(get()) } bind AppInitTask::class
-    single { LocalSettingManager(get(), androidContext()) } bind AppInitTask::class
+    single { LocalSettingManager(get(), get()) } bind AppInitTask::class
     single { HistorySearchManager(get()) } bind AppInitTask::class
+    single { ReadHistoryManager(get()) } bind AppInitTask::class
     single { ToastManager() }
     single { DownloadToastAggregator(get()) }
     single { InitManager() }
+    single { AppUpdateDownloadManager(get(), get(), get()) }
 
     single<Gson> { GsonBuilder().setStrictness(Strictness.LENIENT).serializeNulls().create() }
 

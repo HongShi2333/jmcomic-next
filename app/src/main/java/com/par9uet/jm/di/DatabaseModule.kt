@@ -1,6 +1,8 @@
 package com.par9uet.jm.di
 
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.par9uet.jm.database.AppDatabase
 import com.par9uet.jm.store.DownloadManager
 import com.par9uet.jm.ui.viewModel.DownloadComicDetailViewModel
@@ -19,16 +21,28 @@ val databaseModule = module {
             AppDatabase::class.java,
             "app_database"
         )
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
             .fallbackToDestructiveMigration(false)
             .build()
     }
     single { get<AppDatabase>().downloadComicDao() }
-    single { get<AppDatabase>().readingProgressDao() }
-    single { get<AppDatabase>().chapterProgressDao() }
     single { DownloadManager(get(), get(), get(), get()) }
     viewModel { DownloadViewModel(get()) }
     viewModel { DownloadComicDetailViewModel(get()) }
 
     worker { DownloadComicWorker(get(), get(), get(), get(), get(), get(), get()) }
+}
+
+private val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE download_comics ADD COLUMN groupId INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE download_comics ADD COLUMN groupName TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE download_comics ADD COLUMN chapterName TEXT NOT NULL DEFAULT ''")
+    }
+}
+
+private val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE download_comics ADD COLUMN tagList TEXT NOT NULL DEFAULT '[]'")
+    }
 }

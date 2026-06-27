@@ -19,13 +19,18 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.Comic
+import com.par9uet.jm.store.LocalSettingManager
+import com.par9uet.jm.utils.filterBlockedTags
+import org.koin.compose.getKoin
 
 @Composable
 fun ComicLazyGrid(
@@ -38,12 +43,17 @@ fun ComicLazyGrid(
     onRefresh: () -> Unit = {},
     onLoadMore: () -> Unit = {},
     modifier: Modifier = Modifier,
-    columns: GridCells = GridCells.Fixed(3),
+    columns: GridCells = adaptiveComicGridCells(),
     verticalArrangement: Arrangement.HorizontalOrVertical = Arrangement.spacedBy(10.dp),
     horizontalArrangement: Arrangement.HorizontalOrVertical = Arrangement.spacedBy(10.dp),
     contentPadding: PaddingValues = PaddingValues(8.dp),
-    stickyHeaderContent: @Composable (() -> Unit)? = null
+    stickyHeaderContent: @Composable (() -> Unit)? = null,
+    localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
+    val localSetting by localSettingManager.localSettingState.collectAsState()
+    val visibleList = remember(list, localSetting.blockedTagList) {
+        list.filterBlockedTags(localSetting.blockedTagList)
+    }
     val shouldLoadMore =
         remember(
             gridState.layoutInfo.visibleItemsInfo,
@@ -89,12 +99,12 @@ fun ComicLazyGrid(
                 }
             }
             items(
-                items = list,
+                items = visibleList,
                 key = { it.id },
             ) { item ->
                 Comic(item)
             }
-            if (list.isNotEmpty()) {
+            if (visibleList.isNotEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     LoadMore(
                         isLoading = isMoreLoading,

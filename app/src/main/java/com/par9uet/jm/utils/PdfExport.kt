@@ -6,7 +6,9 @@ import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.par9uet.jm.cache.getComicChapterDownloadDir
 import com.par9uet.jm.cache.getDownloadDir
+import com.par9uet.jm.cache.listComicImageFiles
 import com.par9uet.jm.database.model.DownloadComic
 import java.io.File
 import java.io.FileOutputStream
@@ -23,7 +25,7 @@ data class CachedComicInfo(
 fun getCachedComicInfo(context: Context, comic: DownloadComic): CachedComicInfo {
     val imageDir = getComicImageDir(context, comic)
     val imageFiles = imageDir?.let(::listComicImageFiles).orEmpty()
-    val zipFile = comic.zipPath.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.exists() }
+    val zipFile = comic.zipPath.takeIf { it.isNotBlank() }?.let(::File)?.takeIf { it.isFile && it.exists() }
     val totalBytes = imageFiles.sumOf { it.length() } + (zipFile?.length() ?: 0L)
     return CachedComicInfo(
         imageCount = imageFiles.size,
@@ -46,6 +48,44 @@ fun exportComicToPdf(
     }
 
     val fileName = safeFileName("${comic.name}_${comic.id}.pdf")
+    return writeImagesToPdf(context, treeUri, fileName, imageFiles)
+}
+
+fun exportComicsToMergedPdf(
+    context: Context,
+    comics: List<DownloadComic>,
+    treeUri: Uri
+): String {
+    val imageFiles = comics.flatMap { comic ->
+        getComicImageDir(context, comic)?.let(::listComicImageFiles).orEmpty()
+    }
+    if (imageFiles.isEmpty()) {
+        throw IllegalStateException("未找到可导出的缓存图片")
+    }
+    val groupName = comics.firstOrNull { it.groupName.isNotBlank() }?.groupName
+        ?: comics.firstOrNull()?.name
+        ?: "comic"
+    val fileName = safeFileName("${groupName}_合并_${comics.size}章.pdf")
+    return writeImagesToPdf(context, treeUri, fileName, imageFiles)
+}
+
+fun exportComicsToSeparatePdf(
+    context: Context,
+    comics: List<DownloadComic>,
+    treeUri: Uri
+): List<String> {
+    if (comics.isEmpty()) {
+        throw IllegalStateException("没有可导出的缓存章节")
+    }
+    return comics.map { exportComicToPdf(context, it, treeUri) }
+}
+
+private fun writeImagesToPdf(
+    context: Context,
+    treeUri: Uri,
+    fileName: String,
+    imageFiles: List<File>
+): String {
     val parentDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
     val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocumentId)
     val outputUri = DocumentsContract.createDocument(
@@ -79,11 +119,21 @@ fun exportComicToPdf(
 }
 
 private fun getComicImageDir(context: Context, comic: DownloadComic): File? {
+    val directDir = comic.zipPath.takeIf { it.isNotBlank() }?.let(::File)
+    if (directDir?.isDirectory == true && listComicImageFiles(directDir).isNotEmpty()) {
+        return directDir
+    }
+
+    val namedDir = getComicChapterDownloadDir(context, comic)
+    if (namedDir.exists() && listComicImageFiles(namedDir).isNotEmpty()) {
+        return namedDir
+    }
+
     val dir = File(getDownloadDir(context), "${comic.id}")
     if (dir.exists() && listComicImageFiles(dir).isNotEmpty()) {
         return dir
     }
-    val zipFile = comic.zipPath.takeIf { it.isNotBlank() }?.let(::File) ?: return dir.takeIf { it.exists() }
+    val zipFile = directDir?.takeIf { it.isFile } ?: return dir.takeIf { it.exists() }
     if (!zipFile.exists()) {
         return dir.takeIf { it.exists() }
     }
@@ -99,13 +149,6 @@ private fun getComicImageDir(context: Context, comic: DownloadComic): File? {
         }
     }
     return dir.takeIf { it.exists() }
-}
-
-private fun listComicImageFiles(dir: File): List<File> {
-    return dir.listFiles()
-        ?.filter { it.isFile && it.extension.lowercase() in setOf("webp", "jpg", "jpeg", "png") }
-        ?.sortedWith(compareBy<File> { it.nameWithoutExtension.toIntOrNull() ?: Int.MAX_VALUE }.thenBy { it.name })
-        .orEmpty()
 }
 
 private fun safeFileName(name: String): String {

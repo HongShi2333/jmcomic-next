@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:name=".JmApplication"
         android:allowBackup="true"
@@ -21,43 +22,46 @@
             android:theme="@style/Theme.Jmmobile" />
 
         <activity-alias
-            android:name=".MainActivityDefault"
-            android:targetActivity=".MainActivity"
+            android:name=".DefaultLauncherAlias"
             android:enabled="true"
             android:exported="true"
             android:icon="@mipmap/logo"
+            android:label="@string/launcher_disguise_default"
             android:roundIcon="@mipmap/logo_round"
-            android:label="@string/app_name">
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityDisguiseLauncher"
-            android:targetActivity=".MainActivity"
+            android:name=".SystemToolsLauncherAlias"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher"
-            android:roundIcon="@mipmap/ic_launcher_round"
-            android:label="@string/launcher_disguise_label_tools">
+            android:icon="@drawable/ic_launcher_system_tools"
+            android:label="@string/launcher_disguise_system_tools"
+            android:roundIcon="@drawable/ic_launcher_system_tools"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
 
         <activity-alias
-            android:name=".MainActivityDisguiseRound"
-            android:targetActivity=".MainActivity"
+            android:name=".GalleryLauncherAlias"
             android:enabled="false"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher_round"
-            android:roundIcon="@mipmap/ic_launcher_round"
-            android:label="@string/launcher_disguise_label_gallery">
+            android:icon="@drawable/ic_launcher_gallery"
+            android:label="@string/launcher_disguise_gallery"
+            android:roundIcon="@drawable/ic_launcher_gallery"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>

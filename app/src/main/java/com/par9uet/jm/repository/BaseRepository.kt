@@ -43,7 +43,7 @@ open class BaseRepository(
             is UnknownHostException -> NetWorkResult.Error("网络不可用")
             is HttpException -> {
                 val errMsg = when (e.response.code) {
-                    401 -> "未授权，请重新登录"
+                    401 -> "账号或密码错误，请重新输入"
                     else -> "网络错误：${e.response.code}"
                 }
                 NetWorkResult.Error(errMsg)

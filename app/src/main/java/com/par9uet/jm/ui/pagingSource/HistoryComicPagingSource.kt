@@ -6,9 +6,11 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.repository.UserRepository
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.retrofit.model.UserHistoryComicListResponse
+import com.par9uet.jm.utils.filterBlockedTags
 
 class HistoryComicPagingSource(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val blockedTagList: List<String> = listOf(),
 ) : PagingSource<Int, Comic>() {
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
         val currentPage = params.key ?: 1
@@ -19,7 +21,7 @@ class HistoryComicPagingSource(
             }
 
             is NetWorkResult.Success<UserHistoryComicListResponse> -> {
-                val list = data.data.toComicList()
+                val list = data.data.toComicList().filterBlockedTags(blockedTagList)
                 val total = data.data.total
                 val isLastPage = currentPage >= (total + params.loadSize - 1) / params.loadSize
                 LoadResult.Page(

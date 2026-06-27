@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
@@ -28,6 +27,7 @@ import com.par9uet.jm.ui.components.FilterItem
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
+import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.models.CommonUIState
 import com.par9uet.jm.ui.pagingSource.WeekFilter
 import com.par9uet.jm.ui.viewModel.ComicViewModel
@@ -132,7 +132,7 @@ fun ComicWeekRecommendScreen(
                     .weight(1f),
                 lazyPagingItems = weekRecommendComicPagingItems,
                 key = { it.id },
-                columns = GridCells.Fixed(3),
+                columns = adaptiveComicGridCells(),
             ) {
                 Comic(it)
             }

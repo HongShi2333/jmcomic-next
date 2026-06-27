@@ -6,6 +6,7 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.retrofit.model.WeekRecommendComicResponse
+import com.par9uet.jm.utils.filterBlockedTags
 
 data class WeekFilter(
     val categoryId: String? = null,
@@ -15,6 +16,7 @@ data class WeekFilter(
 class WeekComicPagingSource(
     private val comicRepository: ComicRepository,
     private val filter: WeekFilter,
+    private val blockedTagList: List<String> = listOf(),
 ) : PagingSource<Int, Comic>() {
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
         val currentPage = params.key ?: 1
@@ -35,7 +37,7 @@ class WeekComicPagingSource(
             }
 
             is NetWorkResult.Success<WeekRecommendComicResponse> -> {
-                val list = data.data.toComicList()
+                val list = data.data.toComicList().filterBlockedTags(blockedTagList)
                 val total = data.data.total
                 val isLastPage = currentPage >= (total + params.loadSize - 1) / params.loadSize
                 LoadResult.Page(

@@ -22,6 +22,7 @@ data class Comic(
     val relateComicList: List<Comic> = listOf(),
     // 话数
     val comicChapterList: List<ComicChapter> = listOf(),
+    val seriesId: String = "",
     // 价格
     val price: Int,
     // 是否购买
@@ -48,6 +49,7 @@ data class Comic(
                 isCollect = false,
                 relateComicList = listOf(),
                 comicChapterList = listOf(),
+                seriesId = "",
                 price = 0,
                 isBuy = false,
             )

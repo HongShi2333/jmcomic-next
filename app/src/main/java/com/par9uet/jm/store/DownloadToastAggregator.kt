@@ -7,9 +7,7 @@ class DownloadToastAggregator(
 
     fun report(batchId: String, total: Int, comicId: Int, success: Boolean) {
         if (batchId.isBlank() || total <= 1) {
-            if (success) {
-                toastManager.showAsync("下载成功")
-            }
+            toastManager.showAsync(if (success) "下载成功" else "下载失败")
             return
         }
 

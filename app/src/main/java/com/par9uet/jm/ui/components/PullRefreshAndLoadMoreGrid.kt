@@ -33,6 +33,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
     verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(10.dp, Alignment.Top),
     horizontalArrangement: Arrangement.HorizontalOrVertical = Arrangement.spacedBy(10.dp),
     contentPadding: PaddingValues = PaddingValues(10.dp),
+    itemVisible: (item: T) -> Boolean = { true },
     itemContent: @Composable ((item: T) -> Unit),
 ) {
     val isRefreshing = lazyPagingItems.loadState.refresh is LoadState.Loading
@@ -54,7 +55,7 @@ fun <T : Any> PullRefreshAndLoadMoreGrid(
                 key = lazyPagingItems.itemKey { key(it) },
             ) { index ->
                 val item = lazyPagingItems[index]
-                if (item != null) {
+                if (item != null && itemVisible(item)) {
                     itemContent(item)
                 }
             }

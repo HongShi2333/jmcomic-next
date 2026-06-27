@@ -60,7 +60,9 @@ import com.kizitonwose.calendar.core.OutDateStyle
 import com.kizitonwose.calendar.core.daysOfWeek
 import com.kizitonwose.calendar.core.yearMonth
 import com.par9uet.jm.ui.components.CommonScaffold
+import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.viewModel.UserViewModel
+import org.koin.compose.getKoin
 import kotlinx.coroutines.flow.filter
 import org.koin.compose.viewmodel.koinActivityViewModel
 import java.time.LocalDate
@@ -89,8 +91,11 @@ fun rememberFirstVisibleMonthAfterScroll(state: CalendarState): CalendarMonth {
 
 @Composable
 fun SignInScreen(
-    userViewModel: UserViewModel = koinActivityViewModel()
+    userViewModel: UserViewModel = koinActivityViewModel(),
+    userManager: UserManager = getKoin().get()
 ) {
+    val mainNavController = LocalMainNavController.current
+    val isLogin by userManager.isLoginState.collectAsState(false)
     val today = remember { LocalDate.now() }
     val daysOfWeek = remember { daysOfWeek() }
     val currentMonth = remember(today) { today.yearMonth }
@@ -111,8 +116,12 @@ fun SignInScreen(
             }?.get(0) ?: 0
         }
     }
-    LaunchedEffect(Unit) {
-        userViewModel.getSignInData()
+    LaunchedEffect(isLogin) {
+        if (isLogin) {
+            userViewModel.getSignInData()
+        } else {
+            mainNavController.navigate("login")
+        }
     }
     CommonScaffold(
         title = "每日签到"
@@ -122,7 +131,11 @@ fun SignInScreen(
                 .fillMaxSize(),
             isRefreshing = signDataState.isLoading,
             onRefresh = {
-                userViewModel.getSignInData()
+                if (isLogin) {
+                    userViewModel.getSignInData()
+                } else {
+                    mainNavController.navigate("login")
+                }
             }
         ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -251,7 +264,11 @@ fun SignInScreen(
                                 .height(46.dp)
                                 .fillMaxWidth(),
                             onClick = {
-                                userViewModel.signIn()
+                                if (isLogin) {
+                                    userViewModel.signIn()
+                                } else {
+                                    mainNavController.navigate("login")
+                                }
                             }
                         ) {
                             if (signInState.isLoading) {

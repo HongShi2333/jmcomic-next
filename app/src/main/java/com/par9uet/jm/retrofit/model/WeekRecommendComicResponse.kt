@@ -34,7 +34,10 @@ data class WeekRecommendComicResponse(
                 readCount = 0,
                 likeCount = 0,
                 commentCount = 0,
-                tagList = listOf(),
+                tagList = listOfNotNull(
+                    it.category.title,
+                    it.category_sub.title
+                ).filter { title -> title.isNotBlank() }.distinct(),
                 roleList = listOf(),
                 workList = listOf(),
                 isLike = false,

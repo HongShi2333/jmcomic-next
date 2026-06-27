@@ -24,10 +24,14 @@ data class LocalSetting(
     ),
     // 阅读页预先加载的图片张数
     val prefetchCount: Int = 3,
-    // scroll || page
+    // scroll || page || tap
     val readMode: String = "scroll",
+    // default || side
+    val readTapMode: String = "default",
+    val launcherDisguise: String = "default",
     val showComicScrollReadTip: Boolean = true,
     val showComicPageReadTip: Boolean = true,
-    val launcherDisguise: String = LauncherDisguise.DEFAULT.id,
-    val launcherDisguiseList: List<String> = LauncherDisguise.ids,
+    val showComicCacheNotification: Boolean = true,
+    val showComicCacheNotificationName: Boolean = true,
+    val blockedTagList: List<String> = listOf(),
 )

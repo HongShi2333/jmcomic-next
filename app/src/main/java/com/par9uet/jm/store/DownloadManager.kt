@@ -28,127 +28,129 @@ class DownloadManager(
 ) {
     fun downloadComic(comic: Comic) {
         scope.launch(Dispatchers.IO) {
-            insertDownloadTask(
-                comic = comic,
-                parentId = comic.id,
-                parentName = comic.name,
-                chapterIndex = 0,
-                chapterName = "",
-                chapterCount = if (comic.comicChapterList.isEmpty()) 1 else comic.comicChapterList.size
-            )
-            enqueueDownloadRequest(comic.id)
-            toastManager.showAsync("创建下载任务成功")
-        }
-    }
-
-    fun downloadComicChapters(parentComic: Comic, chapters: List<ComicChapter>) {
-        if (chapters.isEmpty()) {
-            return
-        }
-
-        val chapterIndexById = parentComic.comicChapterList
-            .mapIndexed { index, chapter -> chapter.id to index }
-            .toMap()
-
-        scope.launch(Dispatchers.IO) {
-            chapters.forEach { chapter ->
-                val chapterIndex = chapterIndexById[chapter.id] ?: chapters.indexOfFirst { it.id == chapter.id }
-                val normalizedChapterIndex = chapterIndex.coerceAtLeast(0)
-                val normalizedChapterName = chapter.name.ifBlank { "第${normalizedChapterIndex + 1}话" }
-                insertDownloadTask(
-                    comic = Comic.create(
-                        id = chapter.id,
-                        name = parentComic.name,
-                        authorList = parentComic.authorList
-                    ),
-                    parentId = parentComic.id,
-                    parentName = parentComic.name,
-                    chapterIndex = normalizedChapterIndex,
-                    chapterName = normalizedChapterName,
-                    chapterCount = parentComic.comicChapterList.size.coerceAtLeast(chapters.size)
-                )
+            if (downloadComicDao.getExistingIds(listOf(comic.id)).isNotEmpty()) {
+                toastManager.showAsync("该漫画已在缓存列表中")
+                return@launch
             }
-            enqueueDownloadRequests(chapters.map { it.id })
-            toastManager.showAsync("已创建 ${chapters.size} 个下载任务")
+            insertComicTask(comic)
+            toastManager.showAsync("创建缓存任务成功")
+            enqueueDownload(comic.id)
         }
     }
 
     fun downloadComics(comics: List<Comic>) {
-        if (comics.isEmpty()) {
-            return
-        }
-
+        if (comics.isEmpty()) return
         scope.launch(Dispatchers.IO) {
-            comics.forEachIndexed { index, comic ->
-                insertDownloadTask(
-                    comic = comic,
-                    parentId = comic.id,
-                    parentName = comic.name,
-                    chapterIndex = index,
-                    chapterName = "",
-                    chapterCount = comics.size
-                )
+            val existingIds = downloadComicDao.getExistingIds(comics.map { it.id }).toSet()
+            val newComics = comics.filterNot { it.id in existingIds }
+            if (newComics.isEmpty()) {
+                toastManager.showAsync("所选漫画已在缓存列表中")
+                return@launch
             }
-            enqueueDownloadRequests(comics.map { it.id })
-            toastManager.showAsync("已创建 ${comics.size} 个下载任务")
+
+            newComics.forEach { insertComicTask(it) }
+            enqueueDownloads(newComics.map { it.id })
+
+            val skippedCount = comics.size - newComics.size
+            toastManager.showAsync(
+                if (skippedCount > 0) {
+                    "已创建 ${newComics.size} 个缓存任务，跳过 $skippedCount 个已存在漫画"
+                } else {
+                    "已创建 ${newComics.size} 个缓存任务"
+                }
+            )
         }
     }
 
-    private suspend fun insertDownloadTask(
-        comic: Comic,
-        parentId: Int,
-        parentName: String,
-        chapterIndex: Int,
-        chapterName: String,
-        chapterCount: Int
-    ) {
+    fun downloadChapters(parentComic: Comic, chapters: List<ComicChapter>) {
+        if (chapters.isEmpty()) return
+        scope.launch(Dispatchers.IO) {
+            val existingIds = downloadComicDao.getExistingIds(chapters.map { it.id }).toSet()
+            val newChapters = chapters.filterNot { it.id in existingIds }
+            if (newChapters.isEmpty()) {
+                toastManager.showAsync("所选章节已在缓存列表中")
+                return@launch
+            }
+
+            val now = System.currentTimeMillis()
+            newChapters.forEachIndexed { index, chapter ->
+                downloadComicDao.insert(
+                    DownloadComic(
+                        id = chapter.id,
+                        name = "${parentComic.name} ${chapter.name}".trim(),
+                        authorList = parentComic.authorList,
+                        tagList = parentComic.tagList,
+                        coverPath = "",
+                        zipPath = "",
+                        progress = 0f,
+                        status = "pending",
+                        createTime = now + index,
+                        groupId = parentComic.id,
+                        groupName = parentComic.name,
+                        chapterName = chapter.name
+                    )
+                )
+            }
+            enqueueDownloads(newChapters.map { it.id })
+
+            val skippedCount = chapters.size - newChapters.size
+            toastManager.showAsync(
+                if (skippedCount > 0) {
+                    "已创建 ${newChapters.size} 个缓存任务，跳过 $skippedCount 个已存在章节"
+                } else {
+                    "已创建 ${newChapters.size} 个缓存任务"
+                }
+            )
+        }
+    }
+
+    private suspend fun insertComicTask(comic: Comic) {
         downloadComicDao.insert(
             DownloadComic(
                 id = comic.id,
                 name = comic.name,
                 authorList = comic.authorList,
+                tagList = comic.tagList,
                 coverPath = "",
                 zipPath = "",
                 progress = 0f,
                 status = "pending",
                 createTime = System.currentTimeMillis(),
-                parentId = parentId,
-                parentName = parentName,
-                chapterIndex = chapterIndex,
-                chapterName = chapterName,
-                chapterCount = chapterCount.coerceAtLeast(1)
+                groupId = comic.id,
+                groupName = comic.name
             )
         )
     }
 
-    private fun enqueueDownloadRequest(comicId: Int) {
-        enqueueDownloadRequests(listOf(comicId))
+    private fun enqueueDownload(comicId: Int) {
+        enqueueDownloads(listOf(comicId))
     }
 
-    private fun enqueueDownloadRequests(comicIds: List<Int>) {
+    private fun enqueueDownloads(comicIds: List<Int>) {
         if (comicIds.isEmpty()) return
         val distinctComicIds = comicIds.distinct()
         val batchId = if (distinctComicIds.size > 1) UUID.randomUUID().toString() else ""
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
         val workManager = WorkManager.getInstance(context)
         distinctComicIds.forEach { comicId ->
             val downloadRequest = OneTimeWorkRequestBuilder<DownloadComicWorker>()
-                .setConstraints(downloadConstraints())
+                .setConstraints(constraints)
                 .setInputData(
                     workDataOf(
                         "comicId" to comicId,
                         "batchId" to batchId,
                         "batchTotal" to distinctComicIds.size
                     )
-                ) // 传递参数
-                .setBackoffCriteria(BackoffPolicy.LINEAR, DOWNLOAD_RETRY_BACKOFF_SECONDS, TimeUnit.SECONDS) // 重试策略
+                )
+                .setBackoffCriteria(
+                    BackoffPolicy.LINEAR,
+                    DOWNLOAD_RETRY_BACKOFF_SECONDS,
+                    TimeUnit.SECONDS
+                )
                 .build()
             workManager.enqueue(downloadRequest)
         }
-    }
-
-    private fun downloadConstraints(): Constraints {
-        return Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED) // 必须有网
-            .build()
     }
 }

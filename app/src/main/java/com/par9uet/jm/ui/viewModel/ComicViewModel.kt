@@ -12,6 +12,7 @@ import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.HomeSwiperComicListItemResponse
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.retrofit.model.WeekResponse
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.ui.models.CommonUIState
 import com.par9uet.jm.ui.pagingSource.SearchComicFilter
 import com.par9uet.jm.ui.pagingSource.SearchComicPagingSource
@@ -20,12 +21,14 @@ import com.par9uet.jm.ui.pagingSource.WeekFilter
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class ComicViewModel(
-    private val comicRepository: ComicRepository
+    private val comicRepository: ComicRepository,
+    private val localSettingManager: LocalSettingManager,
 ) : ViewModel() {
     data class HomeComicUIState(
         val isLoading: Boolean = true,
@@ -70,7 +73,11 @@ class ComicViewModel(
     val searchComicIdState = _searchComicIdState.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val searchComicPager = _searchComicFilterState.flatMapLatest { filter ->
+    val searchComicPager = combine(
+        _searchComicFilterState,
+        localSettingManager.localSettingState
+    ) { filter, localSetting -> filter to localSetting.blockedTagList }
+        .flatMapLatest { (filter, blockedTagList) ->
         Pager(
             config = PagingConfig(
                 pageSize = 20,
@@ -80,7 +87,8 @@ class ComicViewModel(
             pagingSourceFactory = {
                 SearchComicPagingSource(
                     comicRepository,
-                    filter
+                    filter,
+                    blockedTagList
                 ) { id ->
                     _searchComicIdState.update {
                         id
@@ -153,7 +161,11 @@ class ComicViewModel(
     val weekFilterState = _weekFilterState.asStateFlow()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val weekComicPager = _weekFilterState.flatMapLatest { filter ->
+    val weekComicPager = combine(
+        _weekFilterState,
+        localSettingManager.localSettingState
+    ) { filter, localSetting -> filter to localSetting.blockedTagList }
+        .flatMapLatest { (filter, blockedTagList) ->
         Pager(
             config = PagingConfig(
                 pageSize = 20,
@@ -163,7 +175,8 @@ class ComicViewModel(
             pagingSourceFactory = {
                 WeekComicPagingSource(
                     comicRepository,
-                    filter
+                    filter,
+                    blockedTagList
                 )
             }
         ).flow

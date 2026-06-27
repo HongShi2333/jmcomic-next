@@ -44,6 +44,7 @@ data class ComicDetailResponse(
                 )
             },
             comicChapterList = series.map { ComicChapter(it.id.toInt(), it.name) },
+            seriesId = series_id,
             price = price.toIntOrNull() ?: 0,
             isBuy = purchased
         )

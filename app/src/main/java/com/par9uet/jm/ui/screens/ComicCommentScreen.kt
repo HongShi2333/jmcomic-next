@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ThumbUpOffAlt
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -59,12 +60,14 @@ import androidx.compose.ui.unit.sp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.data.models.Comment
+import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.components.Comment
 import com.par9uet.jm.ui.components.CommentSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import org.koin.compose.viewmodel.koinActivityViewModel
+import org.koin.compose.getKoin
 
 @Composable
 private fun CommentListSkeleton() {
@@ -167,92 +170,122 @@ private fun CommentWithAction(comment: Comment, onReply: (() -> Unit)? = null) {
 fun ComicCommentScreen(
     comicId: Int,
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
+    userManager: UserManager = getKoin().get(),
 ) {
     val focusManager = LocalFocusManager.current
+    val mainNavController = LocalMainNavController.current
+    val isLogin by userManager.isLoginState.collectAsState(false)
     val commentInputFocusRequester = remember { FocusRequester() }
     val commentLazyPagingItems = comicDetailViewModel.commentPager.collectAsLazyPagingItems()
     var replyComment by remember { mutableStateOf<Comment?>(null) }
     LaunchedEffect(Unit) {
         comicDetailViewModel.changeCommentComicId(comicId)
     }
+    LaunchedEffect(isLogin) {
+        if (!isLogin) {
+            mainNavController.navigate("login")
+        }
+    }
     CommonScaffold(
         title = "评论",
         bottomBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .defaultMinSize(minHeight = 80.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .padding(10.dp)
-                    .imePadding(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                val textFieldState = rememberTextFieldState()
-                val comment = {
-                    comicDetailViewModel.comment(
-                        textFieldState.text.toString(),
-                        comicId,
-                        replyComment?.id
-                    ) {
-                        textFieldState.edit {
-                            replace(0, length, "")
-                        }
-                        focusManager.clearFocus()
-                        commentLazyPagingItems.refresh()
-                    }
-                }
-                val commentComicState by comicDetailViewModel.commentComicState.collectAsState()
-                TextField(
-                    lineLimits = TextFieldLineLimits.SingleLine,
+            if (!isLogin) {
+                Row(
                     modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(commentInputFocusRequester),
-                    state = textFieldState,
-                    placeholder = {
-                        Text(text = if (replyComment == null) "报告机长，这是我的起飞感想！" else "回复机长 ${replyComment!!.username}")
-                    },
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        errorContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
-                        errorIndicatorColor = Color.Transparent,
-                        cursorColor = Color.Black
-                    ),
-                    keyboardOptions = KeyboardOptions(
-                        imeAction = ImeAction.Send
-                    ),
-                    onKeyboardAction = {
-                        comment()
-                    }
-                )
-                Spacer(Modifier.width(8.dp))
-                if (replyComment != null) {
-                    IconButton(
-                        onClick = {
-                            replyComment = null
-                        }
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "")
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 72.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .padding(10.dp)
+                        .imePadding(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "登录后发表评论",
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(onClick = { mainNavController.navigate("login") }) {
+                        Text("登录")
                     }
                 }
-                IconButton(
-                    enabled = !commentComicState.isLoading,
-                    onClick = {
-                        comment()
-                    }
+            } else {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 80.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                        .padding(10.dp)
+                        .imePadding(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    if (commentComicState.isLoading) {
-                        CircularProgressIndicator(
-                            color = ButtonDefaults.buttonColors().disabledContainerColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    } else {
-                        Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "")
+                    val textFieldState = rememberTextFieldState()
+                    val comment = {
+                        comicDetailViewModel.comment(
+                            textFieldState.text.toString(),
+                            comicId,
+                            replyComment?.id
+                        ) {
+                            textFieldState.edit {
+                                replace(0, length, "")
+                            }
+                            focusManager.clearFocus()
+                            commentLazyPagingItems.refresh()
+                        }
+                    }
+                    val commentComicState by comicDetailViewModel.commentComicState.collectAsState()
+                    TextField(
+                        lineLimits = TextFieldLineLimits.SingleLine,
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(commentInputFocusRequester),
+                        state = textFieldState,
+                        placeholder = {
+                            Text(text = if (replyComment == null) "报告机长，这是我的起飞感想！" else "回复机长 ${replyComment!!.username}")
+                        },
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            errorContainerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            disabledIndicatorColor = Color.Transparent,
+                            errorIndicatorColor = Color.Transparent,
+                            cursorColor = Color.Black
+                        ),
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = ImeAction.Send
+                        ),
+                        onKeyboardAction = {
+                            comment()
+                        }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    if (replyComment != null) {
+                        IconButton(
+                            onClick = {
+                                replyComment = null
+                            }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "")
+                        }
+                    }
+                    IconButton(
+                        enabled = !commentComicState.isLoading,
+                        onClick = {
+                            comment()
+                        }
+                    ) {
+                        if (commentComicState.isLoading) {
+                            CircularProgressIndicator(
+                                color = ButtonDefaults.buttonColors().disabledContainerColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        } else {
+                            Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "")
+                        }
                     }
                 }
             }
@@ -268,10 +301,14 @@ fun ComicCommentScreen(
             columns = GridCells.Fixed(1)
         ) {
             CommentWithAction(it) {
-                // 强制清楚焦点
-                focusManager.clearFocus()
-                commentInputFocusRequester.requestFocus()
-                replyComment = it
+                if (isLogin) {
+                    // 强制清楚焦点
+                    focusManager.clearFocus()
+                    commentInputFocusRequester.requestFocus()
+                    replyComment = it
+                } else {
+                    mainNavController.navigate("login")
+                }
             }
         }
     }

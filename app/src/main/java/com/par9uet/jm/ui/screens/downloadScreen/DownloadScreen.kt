@@ -1,9 +1,11 @@
 package com.par9uet.jm.ui.screens.downloadScreen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,40 +23,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.par9uet.jm.database.dao.ChapterProgressDao
-import com.par9uet.jm.database.dao.ReadingProgressDao
-import com.par9uet.jm.database.model.ChapterProgress
-import com.par9uet.jm.database.model.ReadingProgress
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.DownloadComicGroup
 import com.par9uet.jm.ui.viewModel.DownloadViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
 fun DownloadScreen(
-    downloadViewModel: DownloadViewModel = koinActivityViewModel(),
-    readingProgressDao: ReadingProgressDao = getKoin().get(),
-    chapterProgressDao: ChapterProgressDao = getKoin().get()
+    downloadViewModel: DownloadViewModel = koinActivityViewModel()
 ) {
     val mainNavController = LocalMainNavController.current
-    val coroutineScope = rememberCoroutineScope()
     val completeGroups by downloadViewModel.completeGroups.collectAsState()
     val activeGroups by downloadViewModel.activeGroups.collectAsState()
     val errorGroups by downloadViewModel.errorGroups.collectAsState()
@@ -62,43 +50,6 @@ fun DownloadScreen(
     var completeExpanded by rememberSaveable { mutableStateOf(true) }
     var activeExpanded by rememberSaveable { mutableStateOf(false) }
     var errorExpanded by rememberSaveable { mutableStateOf(false) }
-    var expandedGroupKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var progressMap by remember { mutableStateOf<Map<Int, ReadingProgress>>(emptyMap()) }
-    var chapterProgressMap by remember { mutableStateOf<Map<Int, ChapterProgress>>(emptyMap()) }
-
-    // Load reading progress for all complete groups
-    LaunchedEffect(completeGroups) {
-        coroutineScope.launch {
-            val parentIds = completeGroups.map { group ->
-                val primary = group.primary
-                if (primary.parentId != 0) primary.parentId else primary.id
-            }.distinct()
-
-            val progresses = withContext(Dispatchers.IO) {
-                parentIds.mapNotNull { parentId ->
-                    readingProgressDao.getProgress(parentId)?.let { parentId to it }
-                }.toMap()
-            }
-            progressMap = progresses
-
-            // Load chapter progress for all chapters
-            val allChapterIds = completeGroups.flatMap { it.ids }
-            val chapterProgresses = withContext(Dispatchers.IO) {
-                allChapterIds.mapNotNull { chapterId ->
-                    chapterProgressDao.getProgress(chapterId)?.let { chapterId to it }
-                }.toMap()
-            }
-            chapterProgressMap = chapterProgresses
-        }
-    }
-
-    fun toggleGroup(key: String) {
-        expandedGroupKeys = if (key in expandedGroupKeys) {
-            expandedGroupKeys - key
-        } else {
-            expandedGroupKeys + key
-        }
-    }
 
     CommonScaffold(title = "下载") {
         Column {
@@ -119,39 +70,26 @@ fun DownloadScreen(
                 item {
                     DownloadSectionHeader(
                         title = "缓存完成",
-                        countText = sectionCountText(completeGroups),
+                        count = completeGroups.size,
                         expanded = completeExpanded,
                         onClick = { completeExpanded = !completeExpanded }
                     )
                 }
-                if (completeExpanded) {
-                    items(completeGroups, key = { "complete-${it.key}" }) { group ->
-                        val groupKey = "complete-${group.key}"
-                        val primary = group.primary
-                        val parentId = if (primary.parentId != 0) primary.parentId else primary.id
-                        val progress = progressMap[parentId]
-
-                        DownloadGroupRowItem(
-                            modifier = Modifier.fillMaxWidth(),
-                            group = group,
-                            expanded = groupKey in expandedGroupKeys,
+                item {
+                    AnimatedVisibility(visible = completeExpanded) {
+                        CompletedGrid(
+                            groups = completeGroups,
                             editing = editState.editing,
-                            selected = group.ids.all { it in editState.selectedIds },
-                            readingProgress = progress,
-                            chapterProgressMap = chapterProgressMap,
-                            onClick = {
+                            selectedIds = editState.selectedIds,
+                            onClick = { group ->
                                 if (editState.editing) {
-                                    downloadViewModel.toggleSelected(group.ids)
+                                    downloadViewModel.toggleSelected(group.itemIds)
                                 } else {
-                                    // Click card: navigate to last read chapter
-                                    val targetChapterId = progress?.chapterId ?: primary.id
-                                    mainNavController.navigate("localComicRead/$targetChapterId")
+                                    mainNavController.navigate("downloadComicDetail/${group.id}")
                                 }
                             },
-                            onLongClick = { downloadViewModel.enterEdit(group.ids) },
-                            onExpandClick = { toggleGroup(groupKey) },
-                            onChapterClick = { chapter ->
-                                mainNavController.navigate("downloadComicDetail/${chapter.id}")
+                            onLongClick = { group ->
+                                downloadViewModel.enterEdit(group.itemIds)
                             }
                         )
                     }
@@ -159,60 +97,54 @@ fun DownloadScreen(
                 item {
                     DownloadSectionHeader(
                         title = "正在缓存",
-                        countText = sectionCountText(activeGroups),
+                        count = activeGroups.size,
                         expanded = activeExpanded,
                         onClick = { activeExpanded = !activeExpanded }
                     )
                 }
                 if (activeExpanded) {
-                    items(activeGroups, key = { "active-${it.key}" }) { group ->
-                        val groupKey = "active-${group.key}"
-                        DownloadGroupRowItem(
+                    items(activeGroups, key = { it.id }) { group ->
+                        DownloadRowItem(
                             modifier = Modifier.fillMaxWidth(),
                             group = group,
-                            expanded = groupKey in expandedGroupKeys,
                             editing = editState.editing,
-                            selected = group.ids.all { it in editState.selectedIds },
+                            selected = editState.selectedIds.containsAll(group.itemIds),
                             onClick = {
                                 if (editState.editing) {
-                                    downloadViewModel.toggleSelected(group.ids)
-                                } else if (group.chapterSize > 1) {
-                                    toggleGroup(groupKey)
+                                    downloadViewModel.toggleSelected(group.itemIds)
+                                } else {
+                                    mainNavController.navigate("downloadComicDetail/${group.id}")
                                 }
                             },
-                            onLongClick = { downloadViewModel.enterEdit(group.ids) },
-                            onExpandClick = { toggleGroup(groupKey) },
-                            onCancel = { downloadViewModel.deleteOne(group.ids) }
+                            onLongClick = { downloadViewModel.enterEdit(group.itemIds) },
+                            onCancel = { downloadViewModel.deleteMany(group.itemIds) }
                         )
                     }
                 }
                 item {
                     DownloadSectionHeader(
-                        title = "发生错误",
-                        countText = sectionCountText(errorGroups),
+                        title = "缓存失败",
+                        count = errorGroups.size,
                         expanded = errorExpanded,
                         onClick = { errorExpanded = !errorExpanded }
                     )
                 }
                 if (errorExpanded) {
-                    items(errorGroups, key = { "error-${it.key}" }) { group ->
-                        val groupKey = "error-${group.key}"
-                        DownloadGroupRowItem(
+                    items(errorGroups, key = { it.id }) { group ->
+                        DownloadRowItem(
                             modifier = Modifier.fillMaxWidth(),
                             group = group,
-                            expanded = groupKey in expandedGroupKeys,
                             editing = editState.editing,
-                            selected = group.ids.all { it in editState.selectedIds },
+                            selected = editState.selectedIds.containsAll(group.itemIds),
                             onClick = {
                                 if (editState.editing) {
-                                    downloadViewModel.toggleSelected(group.ids)
-                                } else if (group.chapterSize > 1) {
-                                    toggleGroup(groupKey)
+                                    downloadViewModel.toggleSelected(group.itemIds)
+                                } else {
+                                    mainNavController.navigate("downloadComicDetail/${group.id}")
                                 }
                             },
-                            onLongClick = { downloadViewModel.enterEdit(group.ids) },
-                            onExpandClick = { toggleGroup(groupKey) },
-                            onCancel = { downloadViewModel.deleteOne(group.ids) }
+                            onLongClick = { downloadViewModel.enterEdit(group.itemIds) },
+                            onCancel = { downloadViewModel.deleteMany(group.itemIds) }
                         )
                     }
                 }
@@ -224,7 +156,7 @@ fun DownloadScreen(
 @Composable
 private fun DownloadSectionHeader(
     title: String,
-    countText: String,
+    count: Int,
     expanded: Boolean,
     onClick: () -> Unit
 ) {
@@ -241,15 +173,47 @@ private fun DownloadSectionHeader(
         ) {
             Text(
                 modifier = Modifier.weight(1f),
-                text = "$title ($countText)",
+                text = "$title ($count)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
             Icon(
                 imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                contentDescription = if (expanded) "折叠" else "展开",
+                contentDescription = if (expanded) "收起" else "展开",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun CompletedGrid(
+    groups: List<DownloadComicGroup>,
+    editing: Boolean,
+    selectedIds: Set<Int>,
+    onClick: (DownloadComicGroup) -> Unit,
+    onLongClick: (DownloadComicGroup) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        groups.chunked(3).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                row.forEach { group ->
+                    DownloadCoverGridItem(
+                        modifier = Modifier.weight(1f),
+                        group = group,
+                        editing = editing,
+                        selected = selectedIds.containsAll(group.itemIds),
+                        onClick = { onClick(group) },
+                        onLongClick = { onLongClick(group) }
+                    )
+                }
+                repeat(3 - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
         }
     }
 }
@@ -262,11 +226,14 @@ private fun DownloadEditBar(
     onPause: () -> Unit,
     onStart: () -> Unit
 ) {
-    Surface(tonalElevation = 2.dp) {
+    Surface(
+        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onClose) {
@@ -274,26 +241,17 @@ private fun DownloadEditBar(
             }
             Text(
                 modifier = Modifier.weight(1f),
-                text = "已选择 $selectedCount 话"
+                text = "已选择 $selectedCount 项"
             )
             IconButton(onClick = onPause) {
                 Icon(Icons.Rounded.Pause, contentDescription = "暂停")
             }
             IconButton(onClick = onStart) {
-                Icon(Icons.Rounded.PlayArrow, contentDescription = "开始")
+                Icon(Icons.Rounded.PlayArrow, contentDescription = "继续")
             }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Rounded.Delete, contentDescription = "删除")
             }
         }
-    }
-}
-
-private fun sectionCountText(groups: List<DownloadComicGroup>): String {
-    val chapterCount = groups.sumOf { it.chapterSize }
-    return if (chapterCount == groups.size) {
-        "${groups.size} 本"
-    } else {
-        "${groups.size} 本 / $chapterCount 话"
     }
 }

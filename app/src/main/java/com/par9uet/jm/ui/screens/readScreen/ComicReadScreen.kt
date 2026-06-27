@@ -1,4 +1,4 @@
-package com.par9uet.jm.ui.screens.readScreen
+﻿package com.par9uet.jm.ui.screens.readScreen
 
 import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
@@ -28,10 +28,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.Message
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -48,10 +51,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -65,9 +68,10 @@ import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.store.DownloadManager
 import com.par9uet.jm.store.LocalSettingManager
+import com.par9uet.jm.store.ReadHistoryManager
+import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
-import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.getKoin
 
@@ -78,43 +82,52 @@ fun ComicReadScreen(
     localOnly: Boolean = false,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
     localSettingManager: LocalSettingManager = getKoin().get(),
-    downloadManager: DownloadManager = getKoin().get()
+    readHistoryManager: ReadHistoryManager = getKoin().get(),
+    downloadManager: DownloadManager = getKoin().get(),
+    userManager: UserManager = getKoin().get()
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val mainNavController = LocalMainNavController.current
     val isShowToolbar by comicReadViewModel.isShowToolBar
     val size = comicReadViewModel.size
     var currentIndexState by comicReadViewModel.currentIndexState
     val localSetting by localSettingManager.localSettingState.collectAsState()
+    val isLogin by userManager.isLoginState.collectAsState(false)
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
     val comicDetailState by comicReadViewModel.comicDetailState.collectAsState()
-    val localChapterNavigationState by comicReadViewModel.localChapterNavigationState.collectAsState()
+    val localChapterList by comicReadViewModel.localChapterList.collectAsState()
+    val readHistory by readHistoryManager.readHistoryState.collectAsState()
     val comic = comicDetailState.data
     val loading = comicPicState.isLoading
-    val lazyListState = rememberLazyListState()
-    val pagerState = rememberPagerState(initialPage = 0) { size }
+    val initialReaderIndex = if (size > 0) currentIndexState.coerceIn(0, size - 1) else 0
+    val lazyListState = rememberLazyListState(initialFirstVisibleItemIndex = initialReaderIndex)
+    val pagerState = rememberPagerState(initialPage = initialReaderIndex) { size }
     val zoomState = rememberReaderZoomState()
-    var targetIndex by remember { mutableIntStateOf(0) }
+    var targetIndex by remember { mutableIntStateOf(initialReaderIndex) }
     var activeDialog by remember { mutableStateOf<ReadPanelDialog?>(null) }
-    val chapterIndex = remember(comic?.comicChapterList, comicId) {
-        comic?.comicChapterList?.indexOfFirst { it.id == comicId } ?: -1
+    var selectedCacheChapterIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var loadedComicId by comicReadViewModel.loadedComicId
+    val readHistoryComicId by comicReadViewModel.readHistoryComicId
+    val readChapterIds = remember(readHistory, readHistoryComicId) {
+        if (readHistoryComicId > 0) {
+            readHistoryManager.readChapterIds(readHistoryComicId, readHistory)
+        } else {
+            emptySet()
+        }
     }
-    val previousChapter = remember(comic?.comicChapterList, chapterIndex) {
-        comic?.comicChapterList?.getOrNull(chapterIndex - 1)
-    }
-    val nextChapter = remember(comic?.comicChapterList, chapterIndex) {
-        comic?.comicChapterList?.getOrNull(chapterIndex + 1)
-    }
-    val toolbarPreviousChapter = if (localOnly) {
-        localChapterNavigationState.previousChapter
+    val readableChapters = if (localOnly) {
+        localChapterList
     } else {
-        previousChapter
+        comic?.comicChapterList.orEmpty()
     }
-    val toolbarNextChapter = if (localOnly) {
-        localChapterNavigationState.nextChapter
-    } else {
-        nextChapter
+    val chapterIndex = remember(readableChapters, comicId) {
+        readableChapters.indexOfFirst { it.id == comicId }
+    }
+    val previousChapter = remember(readableChapters, chapterIndex) {
+        readableChapters.getOrNull(chapterIndex - 1)
+    }
+    val nextChapter = remember(readableChapters, chapterIndex) {
+        readableChapters.getOrNull(chapterIndex + 1)
     }
 
     fun navigateToChapter(chapter: ComicChapter?) {
@@ -152,26 +165,19 @@ fun ComicReadScreen(
     }
 
     LaunchedEffect(comicId) {
-        val onSuccess: () -> Unit = {
-            // Try to restore progress after images are loaded
-            coroutineScope.launch {
-                val savedPageIndex = comicReadViewModel.restoreProgress(comicId, localOnly)
-                if (savedPageIndex != null && savedPageIndex > 0) {
-                    currentIndexState = savedPageIndex
-                    targetIndex = savedPageIndex
-                    zoomState.reset()
-                    comicReadViewModel.decodeIndex(savedPageIndex, context)
-                } else {
-                    currentIndexState = 0
-                    targetIndex = 0
-                    zoomState.reset()
-                    comicReadViewModel.decodeIndex(0, context)
-                }
+        val onSuccess = {
+            if (loadedComicId != comicId) {
+                currentIndexState = 0
+                targetIndex = 0
+                loadedComicId = comicId
+            } else {
+                targetIndex = currentIndexState.coerceAtLeast(0)
             }
-            Unit
+            zoomState.reset()
+            comicReadViewModel.decodeIndex(targetIndex, context)
         }
         if (localOnly) {
-            comicReadViewModel.loadLocalComicChapters(comicId)
+            comicReadViewModel.clearComicDetail()
             comicReadViewModel.getLocalComicPicList(comicId, context, onSuccess)
         } else {
             comicReadViewModel.getComicDetail(comicId)
@@ -202,24 +208,21 @@ fun ComicReadScreen(
             controller?.hide(WindowInsetsCompat.Type.statusBars())
         }
     }
-
-    // Auto-save progress when page changes
-    LaunchedEffect(currentIndexState) {
-        if (!loading && currentIndexState > 0) {
-            comicReadViewModel.autoSaveProgress()
-        }
-    }
-
     DisposableEffect(Unit) {
         onDispose {
             controller?.show(WindowInsetsCompat.Type.statusBars())
-            comicReadViewModel.onReadingExit()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (loading) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+        } else if (size <= 0) {
+            Text(
+                text = comicPicState.errorMsg.orEmpty().ifBlank { "暂无可阅读图片" },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.Center)
+            )
         } else {
             if (localSetting.readMode == "scroll") {
                 ComicScrollRead(
@@ -235,6 +238,7 @@ fun ComicReadScreen(
                     pagerState = pagerState,
                     targetIndex = targetIndex,
                     zoomState = zoomState,
+                    tapOnly = localSetting.readMode == "tap",
                     onUpdateSliderValue = { updateIndexFromReader(it) }
                 )
             }
@@ -255,12 +259,17 @@ fun ComicReadScreen(
                 ReadSideBar(
                     comic = comic,
                     localOnly = localOnly,
+                    chapterEnabled = readableChapters.isNotEmpty(),
                     onToggleCollect = {
-                        comic?.let { currentComic ->
-                            if (currentComic.isCollect) {
-                                comicReadViewModel.unCollect(currentComic.id)
-                            } else {
-                                comicReadViewModel.collect(currentComic.id)
+                        if (!isLogin) {
+                            mainNavController.navigate("login")
+                        } else {
+                            comic?.let { currentComic ->
+                                if (currentComic.isCollect) {
+                                    comicReadViewModel.unCollect(currentComic.id)
+                                } else {
+                                    comicReadViewModel.collect(currentComic.id)
+                                }
                             }
                         }
                     },
@@ -269,12 +278,21 @@ fun ComicReadScreen(
                             if (currentComic.comicChapterList.isEmpty()) {
                                 downloadManager.downloadComic(currentComic)
                             } else {
+                                selectedCacheChapterIds =
+                                    currentComic.comicChapterList.map { it.id }.toSet()
                                 activeDialog = ReadPanelDialog.Cache
                             }
                         }
                     },
+                    onComment = {
+                        if (!isLogin) {
+                            mainNavController.navigate("login")
+                        } else {
+                            mainNavController.navigate("comment/$comicId")
+                        }
+                    },
                     onChapterJump = {
-                        if (comic?.comicChapterList?.isNotEmpty() == true) {
+                        if (readableChapters.isNotEmpty()) {
                             activeDialog = ReadPanelDialog.Chapter
                         }
                     }
@@ -295,11 +313,11 @@ fun ComicReadScreen(
                 ToolsBar(
                     currentIndex = currentIndexState,
                     pageCount = size,
-                    previousChapterEnabled = toolbarPreviousChapter != null,
-                    nextChapterEnabled = toolbarNextChapter != null,
+                    previousChapterEnabled = previousChapter != null,
+                    nextChapterEnabled = nextChapter != null,
                     showResetZoom = zoomState.isZoomed,
-                    onPreviousChapter = { navigateToChapter(toolbarPreviousChapter) },
-                    onNextChapter = { navigateToChapter(toolbarNextChapter) },
+                    onPreviousChapter = { navigateToChapter(previousChapter) },
+                    onNextChapter = { navigateToChapter(nextChapter) },
                     onPageSelected = { jumpToIndex(it) },
                     onResetZoom = { zoomState.reset() }
                 )
@@ -350,26 +368,29 @@ fun ComicReadScreen(
         ReadPanelDialog.Cache -> {
             val currentComic = comic
             if (currentComic != null) {
-                ChapterPickerDialog(
-                    title = "选择缓存章节",
+                ChapterCachePickerDialog(
                     chapters = currentComic.comicChapterList,
-                    currentChapterId = null,
+                    selectedChapterIds = selectedCacheChapterIds,
+                    onSelectedChange = { selectedCacheChapterIds = it },
                     onDismiss = { activeDialog = null },
-                    onSelect = { chapter ->
-                        downloadManager.downloadComicChapters(currentComic, listOf(chapter))
+                    onConfirm = {
+                        val selectedChapters = currentComic.comicChapterList
+                            .filter { it.id in selectedCacheChapterIds }
+                        downloadManager.downloadChapters(currentComic, selectedChapters)
                         activeDialog = null
+                        selectedCacheChapterIds = emptySet()
                     }
                 )
             }
         }
 
         ReadPanelDialog.Chapter -> {
-            val currentComic = comic
-            if (currentComic != null) {
+            if (readableChapters.isNotEmpty()) {
                 ChapterPickerDialog(
                     title = "跳转章节",
-                    chapters = currentComic.comicChapterList,
+                    chapters = readableChapters,
                     currentChapterId = comicId,
+                    readChapterIds = readChapterIds,
                     onDismiss = { activeDialog = null },
                     onSelect = { chapter ->
                         activeDialog = null
@@ -389,17 +410,113 @@ private enum class ReadPanelDialog {
 }
 
 @Composable
+private fun ChapterCachePickerDialog(
+    chapters: List<ComicChapter>,
+    selectedChapterIds: Set<Int>,
+    onSelectedChange: (Set<Int>) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val allChapterIds = remember(chapters) { chapters.map { it.id }.toSet() }
+    val allSelected = chapters.isNotEmpty() && selectedChapterIds.containsAll(allChapterIds)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "选择缓存章节") },
+        text = {
+            if (chapters.isEmpty()) {
+                Text(text = "暂无可选章节")
+            } else {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectedChange(if (allSelected) emptySet() else allChapterIds)
+                            }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = allSelected,
+                            onCheckedChange = { checked ->
+                                onSelectedChange(if (checked) allChapterIds else emptySet())
+                            }
+                        )
+                        Text(text = if (allSelected) "取消全选" else "全选")
+                    }
+                    LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                        itemsIndexed(chapters) { index, chapter ->
+                            val selected = chapter.id in selectedChapterIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onSelectedChange(
+                                            if (selected) {
+                                                selectedChapterIds - chapter.id
+                                            } else {
+                                                selectedChapterIds + chapter.id
+                                            }
+                                        )
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selected,
+                                    onCheckedChange = { checked ->
+                                        onSelectedChange(
+                                            if (checked) {
+                                                selectedChapterIds + chapter.id
+                                            } else {
+                                                selectedChapterIds - chapter.id
+                                            }
+                                        )
+                                    }
+                                )
+                                Text(
+                                    text = chapter.name.ifBlank { "第 ${index + 1} 章" },
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = selectedChapterIds.isNotEmpty()
+            ) {
+                Text(text = "开始缓存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "取消")
+            }
+        }
+    )
+}
+
+@Composable
 private fun ReadSideBar(
     comic: Comic?,
     localOnly: Boolean,
+    chapterEnabled: Boolean,
     onToggleCollect: () -> Unit,
     onCache: () -> Unit,
+    onComment: () -> Unit,
     onChapterJump: () -> Unit,
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 8.dp,
-        shadowElevation = 8.dp,
+        modifier = Modifier.shadow(14.dp, RoundedCornerShape(28.dp)),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+        tonalElevation = 10.dp,
+        shadowElevation = 10.dp,
         shape = RoundedCornerShape(28.dp),
     ) {
         Column(
@@ -421,10 +538,18 @@ private fun ReadSideBar(
                 enabled = !localOnly && comic != null,
                 onClick = onCache
             )
+            if (!localOnly) {
+                ReadSideBarAction(
+                    icon = Icons.AutoMirrored.Outlined.Message,
+                    label = "评论",
+                    enabled = comic != null,
+                    onClick = onComment
+                )
+            }
             ReadChapterSideBarAction(
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 label = "章节",
-                enabled = comic?.comicChapterList?.isNotEmpty() == true,
+                enabled = chapterEnabled,
                 onClick = onChapterJump
             )
         }
@@ -543,6 +668,7 @@ private fun ChapterPickerDialog(
     title: String,
     chapters: List<ComicChapter>,
     currentChapterId: Int?,
+    readChapterIds: Set<Int>,
     onDismiss: () -> Unit,
     onSelect: (ComicChapter) -> Unit,
 ) {
@@ -556,6 +682,7 @@ private fun ChapterPickerDialog(
                 LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
                     itemsIndexed(chapters) { index, chapter ->
                         val selected = chapter.id == currentChapterId
+                        val read = chapter.id in readChapterIds
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -564,11 +691,15 @@ private fun ChapterPickerDialog(
                             shape = RoundedCornerShape(18.dp),
                             color = if (selected) {
                                 MaterialTheme.colorScheme.primaryContainer
+                            } else if (read) {
+                                MaterialTheme.colorScheme.secondaryContainer
                             } else {
                                 MaterialTheme.colorScheme.surfaceContainerHighest
                             },
                             contentColor = if (selected) {
                                 MaterialTheme.colorScheme.onPrimaryContainer
+                            } else if (read) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
                             } else {
                                 MaterialTheme.colorScheme.onSurface
                             },
@@ -593,3 +724,4 @@ private fun ChapterPickerDialog(
         }
     )
 }
+

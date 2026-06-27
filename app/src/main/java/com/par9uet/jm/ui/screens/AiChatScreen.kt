@@ -4,11 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -61,6 +63,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -116,72 +119,150 @@ fun AiChatScreen(
         it.id == uiState.activeConversationId
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ConversationDrawer(
-                conversations = uiState.conversations,
-                activeConversationId = uiState.activeConversationId,
-                onNewConversation = {
-                    aiChatViewModel.createConversation()
-                    coroutineScope.launch { drawerState.close() }
-                },
-                onSelectConversation = {
-                    aiChatViewModel.selectConversation(it)
-                    coroutineScope.launch { drawerState.close() }
-                },
-                onDeleteConversation = aiChatViewModel::deleteConversation
-            )
-        }
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.surface)
-        ) {
-            AiChatHeader(
-                title = activeConversation?.title ?: "AI 对话",
-                onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
-                onNewConversation = aiChatViewModel::createConversation
-            )
-            HorizontalDivider()
-            MessageList(
-                modifier = Modifier.weight(1f),
-                messages = activeConversation?.messages.orEmpty(),
-                isSending = uiState.isSending,
-                onRetry = aiChatViewModel::retry,
-                onEditUserMessage = aiChatViewModel::editUserMessage,
-                onSwitchUserBranch = aiChatViewModel::switchUserBranch,
-                toastManager = toastManager
-            )
-            uiState.errorMessage?.let {
-                Text(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val isTablet = maxWidth >= 700.dp
+        if (isTablet) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                ConversationPanel(
+                    modifier = Modifier.width(300.dp),
+                    conversations = uiState.conversations,
+                    activeConversationId = uiState.activeConversationId,
+                    onNewConversation = aiChatViewModel::createConversation,
+                    onSelectConversation = aiChatViewModel::selectConversation,
+                    onDeleteConversation = aiChatViewModel::deleteConversation
+                )
+                VerticalDivider()
+                AiChatContent(
+                    modifier = Modifier.weight(1f),
+                    title = activeConversation?.title ?: "AI 对话",
+                    messages = activeConversation?.messages.orEmpty(),
+                    uiState = uiState,
+                    showDrawerButton = false,
+                    onOpenDrawer = {},
+                    onNewConversation = aiChatViewModel::createConversation,
+                    onRetry = aiChatViewModel::retry,
+                    onEditUserMessage = aiChatViewModel::editUserMessage,
+                    onSwitchUserBranch = aiChatViewModel::switchUserBranch,
+                    onInputChange = aiChatViewModel::changeInput,
+                    onWebSearchChange = aiChatViewModel::changeWebSearchEnabled,
+                    onSearchSettingsChange = aiChatViewModel::changeSearchSettings,
+                    onSend = aiChatViewModel::send,
+                    onStop = aiChatViewModel::stopGenerating,
+                    toastManager = toastManager
                 )
             }
-            ChatInputBar(
-                input = uiState.input,
-                webSearchEnabled = uiState.webSearchEnabled,
-                searchSettings = uiState.searchSettings,
-                isSending = uiState.isSending,
-                onInputChange = aiChatViewModel::changeInput,
-                onWebSearchChange = aiChatViewModel::changeWebSearchEnabled,
-                onSearchSettingsChange = aiChatViewModel::changeSearchSettings,
-                onSend = aiChatViewModel::send,
-                onStop = aiChatViewModel::stopGenerating
+        } else {
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    ConversationDrawer(
+                        conversations = uiState.conversations,
+                        activeConversationId = uiState.activeConversationId,
+                        onNewConversation = {
+                            aiChatViewModel.createConversation()
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        onSelectConversation = {
+                            aiChatViewModel.selectConversation(it)
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        onDeleteConversation = aiChatViewModel::deleteConversation
+                    )
+                }
+            ) {
+                AiChatContent(
+                    modifier = Modifier.fillMaxSize(),
+                    title = activeConversation?.title ?: "AI 对话",
+                    messages = activeConversation?.messages.orEmpty(),
+                    uiState = uiState,
+                    showDrawerButton = true,
+                    onOpenDrawer = { coroutineScope.launch { drawerState.open() } },
+                    onNewConversation = aiChatViewModel::createConversation,
+                    onRetry = aiChatViewModel::retry,
+                    onEditUserMessage = aiChatViewModel::editUserMessage,
+                    onSwitchUserBranch = aiChatViewModel::switchUserBranch,
+                    onInputChange = aiChatViewModel::changeInput,
+                    onWebSearchChange = aiChatViewModel::changeWebSearchEnabled,
+                    onSearchSettingsChange = aiChatViewModel::changeSearchSettings,
+                    onSend = aiChatViewModel::send,
+                    onStop = aiChatViewModel::stopGenerating,
+                    toastManager = toastManager
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiChatContent(
+    modifier: Modifier,
+    title: String,
+    messages: List<AiChatMessage>,
+    uiState: AiChatViewModel.AiChatUiState,
+    showDrawerButton: Boolean,
+    onOpenDrawer: () -> Unit,
+    onNewConversation: () -> Unit,
+    onRetry: (String, AiChatViewModel.RetryMode) -> Unit,
+    onEditUserMessage: (String, String) -> Unit,
+    onSwitchUserBranch: (String, Int) -> Unit,
+    onInputChange: (String) -> Unit,
+    onWebSearchChange: (Boolean) -> Unit,
+    onSearchSettingsChange: (AiSearchSettings) -> Unit,
+    onSend: () -> Unit,
+    onStop: () -> Unit,
+    toastManager: ToastManager
+) {
+    Column(
+        modifier = modifier.background(MaterialTheme.colorScheme.surface)
+    ) {
+        AiChatHeader(
+            title = title,
+            showDrawerButton = showDrawerButton,
+            onOpenDrawer = onOpenDrawer,
+            onNewConversation = onNewConversation
+        )
+        HorizontalDivider()
+        MessageList(
+            modifier = Modifier.weight(1f),
+            messages = messages,
+            isSending = uiState.isSending,
+            onRetry = onRetry,
+            onEditUserMessage = onEditUserMessage,
+            onSwitchUserBranch = onSwitchUserBranch,
+            toastManager = toastManager
+        )
+        uiState.errorMessage?.let {
+            Text(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
             )
         }
+        ChatInputBar(
+            input = uiState.input,
+            webSearchEnabled = uiState.webSearchEnabled,
+            searchSettings = uiState.searchSettings,
+            isSending = uiState.isSending,
+            onInputChange = onInputChange,
+            onWebSearchChange = onWebSearchChange,
+            onSearchSettingsChange = onSearchSettingsChange,
+            onSend = onSend,
+            onStop = onStop
+        )
     }
 }
 
 @Composable
 private fun AiChatHeader(
     title: String,
+    showDrawerButton: Boolean,
     onOpenDrawer: () -> Unit,
     onNewConversation: () -> Unit
 ) {
@@ -191,8 +272,10 @@ private fun AiChatHeader(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onOpenDrawer) {
-            Icon(Icons.Rounded.Menu, contentDescription = "对话列表")
+        if (showDrawerButton) {
+            IconButton(onClick = onOpenDrawer) {
+                Icon(Icons.Rounded.Menu, contentDescription = "对话列表")
+            }
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -225,6 +308,30 @@ private fun ConversationDrawer(
 ) {
     ModalDrawerSheet(
         drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        ConversationPanel(
+            conversations = conversations,
+            activeConversationId = activeConversationId,
+            onNewConversation = onNewConversation,
+            onSelectConversation = onSelectConversation,
+            onDeleteConversation = onDeleteConversation
+        )
+    }
+}
+
+@Composable
+private fun ConversationPanel(
+    modifier: Modifier = Modifier,
+    conversations: List<AiChatConversation>,
+    activeConversationId: String,
+    onNewConversation: () -> Unit,
+    onSelectConversation: (String) -> Unit,
+    onDeleteConversation: (String) -> Unit
+) {
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
         Row(
             modifier = Modifier

@@ -2,7 +2,7 @@ package com.par9uet.jm.ui.screens
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -107,7 +108,7 @@ fun LoginScreen(
             )
         }
     ) { innerPadding ->
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
@@ -116,9 +117,14 @@ fun LoginScreen(
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
+            val useCompactTabletLogin = maxWidth >= 700.dp
+            val cardMaxWidth = if (useCompactTabletLogin) 360.dp else 420.dp
+            val cardPadding = if (useCompactTabletLogin) 18.dp else 22.dp
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = cardMaxWidth),
+                shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                 ),
@@ -127,8 +133,8 @@ fun LoginScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(22.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                        .padding(cardPadding),
+                    verticalArrangement = Arrangement.spacedBy(if (useCompactTabletLogin) 12.dp else 16.dp)
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.logo_with_name),
