@@ -14,6 +14,8 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.par9uet.jm.MainActivity
 import com.par9uet.jm.R
+import com.par9uet.jm.cache.NOMEDIA_FILE_NAME
+import com.par9uet.jm.cache.ensureDownloadTreeHiddenFromGallery
 import com.par9uet.jm.cache.cachePathExists
 import com.par9uet.jm.cache.cachePathLength
 import com.par9uet.jm.cache.cachePathSize
@@ -66,6 +68,9 @@ class CacheMigrationWorker(
         setCacheMigrationRunning(appContext, true)
         val progressGroupIds = mutableSetOf<Int>()
         try {
+            if (targetTreeUri.isNotBlank()) {
+                ensureDownloadTreeHiddenFromGallery(appContext, targetTreeUri)
+            }
             updateProgress(0, "正在等待当前缓存任务结束")
             while (downloadComicDao.getAll().any { it.status == "downloading" }) delay(750)
 
@@ -215,6 +220,7 @@ class CacheMigrationWorker(
             val source = File(sourcePath)
             if (!source.isDirectory) return
             source.listFiles().orEmpty().forEach { child ->
+                if (child.name == NOMEDIA_FILE_NAME) return@forEach
                 if (child.isDirectory) copyDirectory(child.absolutePath, destinationDirectory(destinationPath, child.name), onBytes)
                 else copyFile(child.absolutePath, destinationFile(destinationPath, child.name, mimeType(child.name)), onBytes)
             }
@@ -231,6 +237,7 @@ class CacheMigrationWorker(
                 val child = DocumentsContract.buildDocumentUriUsingTree(source, cursor.getString(0)).toString()
                 val name = cursor.getString(1)
                 val type = cursor.getString(2)
+                if (name == NOMEDIA_FILE_NAME) continue
                 if (type == DocumentsContract.Document.MIME_TYPE_DIR) copyDirectory(child, destinationDirectory(destinationPath, name), onBytes)
                 else copyFile(child, destinationFile(destinationPath, name, type ?: mimeType(name)), onBytes)
             }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,6 +52,7 @@ import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
+import com.par9uet.jm.ui.components.ScrollToTopButton
 import com.par9uet.jm.ui.components.TabSkeleton
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.state.rememberTabIndexState
@@ -162,6 +164,7 @@ fun HomeScreen(
     }
 
     val selectedTabIndexState = rememberTabIndexState()
+    val gridState = rememberLazyGridState()
     val onTabClick: (index: Int) -> Unit = {
         selectedTabIndexState.value = it.coerceIn(0, (homeComicState.list.size - 1).coerceAtLeast(0))
     }
@@ -211,6 +214,7 @@ fun HomeScreen(
                             }
                         }
                     },
+                state = gridState,
                 columns = adaptiveComicGridCells(localSetting.homeGridColumns),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -268,6 +272,12 @@ fun HomeScreen(
                     }
                 }
             }
+            ScrollToTopButton(
+                gridState = gridState,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            )
         }
     }
 }

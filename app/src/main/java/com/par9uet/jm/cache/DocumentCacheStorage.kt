@@ -22,6 +22,7 @@ fun getTreeUriForCachePath(path: String): Uri? = runCatching {
 fun getComicDownloadRootPath(context: Context, comic: DownloadComic): String {
     val treeUri = getDownloadTreeUri(context)
     if (treeUri == null) return getComicDownloadRootDir(context, comic).absolutePath
+    ensureDownloadTreeHiddenFromGallery(context, treeUri.toString())
     val root = DocumentsContract.buildDocumentUriUsingTree(
         treeUri,
         DocumentsContract.getTreeDocumentId(treeUri),
@@ -248,19 +249,26 @@ fun deleteCachePath(context: Context, path: String): Boolean = if (isDocumentCac
 }
 
 fun findOrCreateCacheDocument(context: Context, parent: Uri, name: String, mimeType: String): Uri? {
+    findExistingCacheDocument(context, parent, name)?.let { return it }
+    return runCatching {
+        DocumentsContract.createDocument(context.contentResolver, parent, mimeType, name)
+    }.getOrNull() ?: findExistingCacheDocument(context, parent, name)
+}
+
+private fun findExistingCacheDocument(context: Context, parent: Uri, name: String): Uri? {
     val children = DocumentsContract.buildChildDocumentsUriUsingTree(parent, DocumentsContract.getDocumentId(parent))
-    context.contentResolver.query(
+    return context.contentResolver.query(
         children,
         arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
         null, null, null,
     )?.use { cursor ->
         while (cursor.moveToNext()) {
             if (cursor.getString(1) == name) {
-                return DocumentsContract.buildDocumentUriUsingTree(parent, cursor.getString(0))
+                return@use DocumentsContract.buildDocumentUriUsingTree(parent, cursor.getString(0))
             }
         }
+        null
     }
-    return DocumentsContract.createDocument(context.contentResolver, parent, mimeType, name)
 }
 
 private fun documentPathSize(context: Context, uri: Uri): Long {

@@ -66,6 +66,7 @@ import com.par9uet.jm.data.models.APP_LOCK_TYPE_PATTERN
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.network.ComicCoverUrlResolver
+import com.par9uet.jm.cache.ensureDownloadTreeHiddenFromGallery
 import com.par9uet.jm.cache.setDownloadTreeUri
 import com.par9uet.jm.database.dao.DownloadComicDao
 import com.par9uet.jm.store.BACKUP_PROTECTION_BOTH
@@ -277,6 +278,7 @@ fun BackupRestoreScreen(
                     }
                     if (options.includeDownloadPath) {
                         setDownloadTreeUri(context, setting.downloadTreeUri)
+                        ensureDownloadTreeHiddenFromGallery(context, setting.downloadTreeUri)
                         applied += "\u7f13\u5b58\u8def\u5f84"
                     }
                     applied += "本地设置"

@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -37,6 +39,7 @@ import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.ScrollToTopButton
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.ui.viewModel.ComicViewModel
@@ -109,6 +112,7 @@ fun ComicSearchResultScreen(
 
     val isLoading = comicSearchLazyPagingItems.loadState.refresh is LoadState.Loading
     val hasError = comicSearchLazyPagingItems.loadState.refresh is LoadState.Error
+    val gridState = rememberLazyGridState()
 
     CommonScaffold(
         title = comicSearchFilterState.searchContent.ifBlank { "搜索" },
@@ -125,48 +129,57 @@ fun ComicSearchResultScreen(
             )
         },
     ) {
-        Column {
-            OrderFilterRow(
-                currentOrder = comicSearchFilterState.order,
-                onOrderChange = { comicViewModel.changeSearchComicOrderFilter(it) }
-            )
-            AnimatedVisibility(visible = isLoading, enter = fadeIn(), exit = fadeOut()) {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                OrderFilterRow(
+                    currentOrder = comicSearchFilterState.order,
+                    onOrderChange = { comicViewModel.changeSearchComicOrderFilter(it) }
                 )
-            }
-            if (isLoading && comicSearchLazyPagingItems.itemCount == 0) {
-                ComicSearchResultSkeleton(modifier = Modifier.weight(1f).padding(top = 8.dp))
-                return@Column
-            }
-            if (hasError && comicSearchLazyPagingItems.itemCount == 0) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = (comicSearchLazyPagingItems.loadState.refresh as? LoadState.Error)?.error?.message
-                            ?: "加载失败，请重试",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                AnimatedVisibility(visible = isLoading, enter = fadeIn(), exit = fadeOut()) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp),
                     )
                 }
-                return@Column
+                if (isLoading && comicSearchLazyPagingItems.itemCount == 0) {
+                    ComicSearchResultSkeleton(modifier = Modifier.weight(1f).padding(top = 8.dp))
+                    return@Column
+                }
+                if (hasError && comicSearchLazyPagingItems.itemCount == 0) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = (comicSearchLazyPagingItems.loadState.refresh as? LoadState.Error)?.error?.message
+                                ?: "加载失败，请重试",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    return@Column
+                }
+                PullRefreshAndLoadMoreGrid(
+                    modifier = Modifier.weight(1f),
+                    gridState = gridState,
+                    lazyPagingItems = comicSearchLazyPagingItems,
+                    key = { it.id },
+                    columns = adaptiveComicGridCells(localSetting.searchGridColumns),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                ) {
+                    Comic(it)
+                }
             }
-            PullRefreshAndLoadMoreGrid(
-                modifier = Modifier.weight(1f),
-                lazyPagingItems = comicSearchLazyPagingItems,
-                key = { it.id },
-                columns = adaptiveComicGridCells(localSetting.searchGridColumns),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
-            ) {
-                Comic(it)
-            }
+            ScrollToTopButton(
+                gridState = gridState,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            )
         }
     }
 }

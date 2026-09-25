@@ -74,6 +74,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawBehind
@@ -107,7 +108,10 @@ import com.par9uet.jm.worker.CACHE_MIGRATION_PROGRESS
 import com.par9uet.jm.worker.CACHE_MIGRATION_STAGE
 import com.par9uet.jm.worker.CACHE_MIGRATION_TARGET_URI
 import com.par9uet.jm.worker.CACHE_MIGRATION_WORK_NAME
+import com.par9uet.jm.cache.ensureDownloadTreeHiddenFromGallery
 import com.par9uet.jm.worker.CacheMigrationWorker
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 private sealed class SettingType {
     object ComicApiSource : SettingType()
@@ -157,6 +161,7 @@ fun LocalSettingScreen(
     var isOpenSettingSelectDialog by remember { mutableStateOf(false) }
     var showHomeExcludedTagsDialog by remember { mutableStateOf(false) }
     var showCachePathDialog by remember { mutableStateOf(false) }
+    val cachePathScope = rememberCoroutineScope()
     val workManager = remember(context) { WorkManager.getInstance(context) }
     var migrationWorkList by remember { mutableStateOf<List<WorkInfo>>(emptyList()) }
     DisposableEffect(workManager) {
@@ -187,7 +192,11 @@ fun LocalSettingScreen(
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
             runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
-            startCacheMigration(uri.toString())
+            val treeUri = uri.toString()
+            cachePathScope.launch(Dispatchers.IO) {
+                ensureDownloadTreeHiddenFromGallery(context, treeUri)
+            }
+            startCacheMigration(treeUri)
         }
     }
 
@@ -445,7 +454,7 @@ fun LocalSettingScreen(
             AlertDialog(
                 onDismissRequest = { showCachePathDialog = false },
                 title = { Text("\u7f13\u5b58\u8def\u5f84") },
-                text = { Text("选择新位置后会迁移已有漫画缓存。迁移完成前继续使用原路径，可切换到后台并通过通知查看进度。") },
+                text = { Text("选择新位置后会迁移已有漫画缓存。应用会在自定义目录写入 .nomedia，避免缓存图片进入系统相册。迁移完成前继续使用原路径，可切换到后台并通过通知查看进度。") },
                 confirmButton = {
                     TextButton(onClick = {
                         showCachePathDialog = false
