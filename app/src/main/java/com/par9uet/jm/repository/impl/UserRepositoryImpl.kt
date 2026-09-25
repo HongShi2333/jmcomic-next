@@ -30,12 +30,18 @@ import io.github.jukomu.jmcomic.api.model.JmUserInfo
 import io.github.jukomu.jmcomic.core.client.impl.JmApiClient
 import io.github.jukomu.jmcomic.core.config.JmConfiguration
 import io.github.jukomu.jmcomic.core.net.OkHttpBuilder
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cookie
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 
 class UserRepositoryImpl(
     private val service: UserService,
@@ -44,6 +50,17 @@ class UserRepositoryImpl(
     private val cookieStorage: CookieStorage,
     private val embeddedClientManager: EmbeddedClientManager,
 ) : BaseRepository(initManager), UserRepository {
+
+    private data class FavoritePageCacheEntry(
+        val data: UserCollectComicListResponse,
+        val expiresAt: Long,
+        val hasDetailTags: Boolean,
+    )
+
+    // 首页预热、PagingSource 和文件夹列表可能在同一帧触发同一页请求。
+    // 用短时缓存 + in-flight 合并，避免重复访问收藏接口，同时不长期持有用户数据。
+    private val favoritePageCache = ConcurrentHashMap<String, FavoritePageCacheEntry>()
+    private val favoritePageRequests = ConcurrentHashMap<String, CompletableDeferred<NetWorkResult<UserCollectComicListResponse>>>()
 
     override suspend fun login(username: String, password: String): NetWorkResult<LoginResponse> {
         if (useEmbeddedApi()) {
@@ -66,11 +83,60 @@ class UserRepositoryImpl(
     override suspend fun getCollectComicList(
         page: Int,
         order: CollectComicOrderFilter,
-        folderId: Int
+        folderId: Int,
+        enrichTags: Boolean,
+    ): NetWorkResult<UserCollectComicListResponse> {
+        val cacheKey = favoritePageCacheKey(page, order, folderId)
+        favoritePageCache[cacheKey]
+            ?.takeIf { entry ->
+                entry.expiresAt > System.currentTimeMillis() &&
+                    (!enrichTags || entry.hasDetailTags)
+            }
+            ?.let { return NetWorkResult.Success(it.data) }
+
+        val request = CompletableDeferred<NetWorkResult<UserCollectComicListResponse>>()
+        val requestKey = "$cacheKey|${if (enrichTags) "details" else "summary"}"
+        val activeRequest = favoritePageRequests.putIfAbsent(requestKey, request)
+        if (activeRequest != null) return activeRequest.await()
+
+        return try {
+            val result = retryNetworkRequest("收藏漫画") {
+                fetchCollectComicList(page, order, folderId, enrichTags)
+            }
+            if (result is NetWorkResult.Success) {
+                val oldEntry = favoritePageCache[cacheKey]
+                if (enrichTags || oldEntry?.hasDetailTags != true) {
+                    favoritePageCache[cacheKey] = FavoritePageCacheEntry(
+                        data = result.data,
+                        expiresAt = System.currentTimeMillis() + if (enrichTags) {
+                            FAVORITE_PAGE_DETAIL_CACHE_TTL_MS
+                        } else {
+                            FAVORITE_PAGE_CACHE_TTL_MS
+                        },
+                        hasDetailTags = enrichTags,
+                    )
+                }
+            }
+            request.complete(result)
+            result
+        } catch (error: Throwable) {
+            request.completeExceptionally(error)
+            throw error
+        } finally {
+            favoritePageRequests.remove(requestKey, request)
+        }
+    }
+
+    private suspend fun fetchCollectComicList(
+        page: Int,
+        order: CollectComicOrderFilter,
+        folderId: Int,
+        enrichTags: Boolean,
     ): NetWorkResult<UserCollectComicListResponse> {
         if (useEmbeddedApi()) {
             return withContext(Dispatchers.IO) {
                 try {
+                    currentCoroutineContext().ensureActive()
                     val client = embeddedClientManager.getClient()
                     embeddedClientManager.setFavoriteOrder(order.value)
                     val query = FavoriteQuery.Builder()
@@ -79,30 +145,45 @@ class UserRepositoryImpl(
                         .build()
                     val favPage = client.getFavorites(query)
                     val metas = favPage.content().orEmpty()
-                    // 为每个收藏项获取完整 Album 以补全所有 tags（并发请求）
-                    val albums = coroutineScope {
-                        metas.map { meta ->
-                            async {
-                                meta to runCatching { client.getAlbum(meta.id().orEmpty()) }.getOrNull()
+                    // 首次列表请求只使用收藏接口元数据，保证列表和封面可以先展示。
+                    // 预加载流程在封面完成后会再次以 enrichTags=true 补齐详情标签。
+                    val listWithTags = if (enrichTags) {
+                        coroutineScope {
+                            metas.chunked(ALBUM_TAG_CONCURRENCY).flatMap { batch ->
+                                batch.map { meta ->
+                                    async {
+                                        meta to withTimeoutOrNull(ALBUM_TAG_TIMEOUT_MS) {
+                                            try {
+                                                client.getAlbum(meta.id().orEmpty())
+                                            } catch (e: CancellationException) {
+                                                throw e
+                                            } catch (_: Exception) {
+                                                null
+                                            }
+                                        }
+                                    }
+                                }.map { it.await() }
                             }
-                        }.map { it.await() }
-                    }
-                    val orderedAlbums = if (order == CollectComicOrderFilter.UPDATE_TIME) {
-                        albums.sortedByDescending { (_, album) -> album?.addTime()?.toLongOrNull() ?: 0L }
+                        }.map { (meta, album) ->
+                                meta.toListItem(
+                                    fullTags = album?.tags().orEmpty().ifEmpty { meta.tags().orEmpty() },
+                                    roles = album?.actors().orEmpty(),
+                                    works = album?.works().orEmpty(),
+                                )
+                        }
                     } else {
-                        albums
-                    }
-                    val listWithFullTags = orderedAlbums.map { (meta, album) ->
-                        meta.toListItem(album?.tags().orEmpty().ifEmpty { meta.tags().orEmpty() })
+                        metas.map { it.toListItem() }
                     }
                     NetWorkResult.Success(
                         UserCollectComicListResponse(
                             count = favPage.totalItems(),
                             folder_list = favPage.folderList(),
-                            list = listWithFullTags,
+                            list = listWithTags,
                             total = favPage.totalItems()
                         )
                     )
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     NetWorkResult.Error("内置API获取收藏列表失败：${e.message ?: "未知错误"}")
                 }
@@ -113,24 +194,49 @@ class UserRepositoryImpl(
         }
     }
 
+    private fun favoritePageCacheKey(
+        page: Int,
+        order: CollectComicOrderFilter,
+        folderId: Int,
+    ): String {
+        val source = if (useEmbeddedApi()) "embedded" else "network"
+        val sessionFingerprint = cookieStorage.get()
+            .joinToString("|") { "${it.domain}:${it.path}:${it.name}=${it.value}" }
+            .hashCode()
+        return "$source|$page|${order.value}|$folderId|$sessionFingerprint"
+    }
+
+    private companion object {
+        const val ALBUM_TAG_CONCURRENCY = 8
+        const val ALBUM_TAG_TIMEOUT_MS = 4_000L
+        const val FAVORITE_PAGE_CACHE_TTL_MS = 5_000L
+        const val FAVORITE_PAGE_DETAIL_CACHE_TTL_MS = 120_000L
+    }
+
     override suspend fun getHistoryComicList(page: Int): NetWorkResult<UserHistoryComicListResponse> {
-        if (useEmbeddedApi()) {
-            return withContext(Dispatchers.IO) {
-                try {
-                    NetWorkResult.Success(withEmbeddedClient { client ->
-                        val albumMetas = client.getWatchHistory(page)
-                        UserHistoryComicListResponse(
-                            list = albumMetas.map { it.toHistoryListItem() },
-                            total = albumMetas.size
-                        )
-                    })
-                } catch (e: Exception) {
-                    NetWorkResult.Error("内置API获取历史漫画失败：${e.message ?: "未知错误"}")
+        return retryNetworkRequest("历史漫画") {
+            if (useEmbeddedApi()) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        currentCoroutineContext().ensureActive()
+                        NetWorkResult.Success(withEmbeddedClient { client ->
+                            val albumMetas = client.getWatchHistory(page)
+                            UserHistoryComicListResponse(
+                                list = albumMetas.map { it.toHistoryListItem() },
+                                total = albumMetas.size
+                            )
+                        })
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        NetWorkResult.Error("内置API获取历史漫画失败：${e.message ?: "未知错误"}")
+                    }
+                }
+            } else {
+                safeApiCall {
+                    service.getHistoryComicList(page)
                 }
             }
-        }
-        return safeApiCall {
-            service.getHistoryComicList(page)
         }
     }
 
@@ -152,26 +258,32 @@ class UserRepositoryImpl(
         page: Int,
         userId: Int
     ): NetWorkResult<UserHistoryCommentListResponse> {
-        if (useEmbeddedApi()) {
-            return withContext(Dispatchers.IO) {
-                try {
-                    NetWorkResult.Success(withEmbeddedClient { client ->
-                        val query = ForumQuery.user(userId.toString())
-                            .page(page)
-                            .build()
-                        val commentList = client.getComments(query)
-                        UserHistoryCommentListResponse(
-                            list = commentList.list.map { it.toHistoryCommentListItem() },
-                            total = commentList.total
-                        )
-                    })
-                } catch (e: Exception) {
-                    NetWorkResult.Error("内置API获取评论历史失败：${e.message ?: "未知错误"}")
+        return retryNetworkRequest("评论历史") {
+            if (useEmbeddedApi()) {
+                withContext(Dispatchers.IO) {
+                    try {
+                        currentCoroutineContext().ensureActive()
+                        NetWorkResult.Success(withEmbeddedClient { client ->
+                            val query = ForumQuery.user(userId.toString())
+                                .page(page)
+                                .build()
+                            val commentList = client.getComments(query)
+                            UserHistoryCommentListResponse(
+                                list = commentList.list.map { it.toHistoryCommentListItem() },
+                                total = commentList.total
+                            )
+                        })
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        NetWorkResult.Error("内置API获取评论历史失败：${e.message ?: "未知错误"}")
+                    }
+                }
+            } else {
+                safeApiCall {
+                    service.getCommentList(page, userId)
                 }
             }
-        }
-        return safeApiCall {
-            service.getCommentList(page, userId)
         }
     }
 
@@ -241,7 +353,11 @@ class UserRepositoryImpl(
         )
     }
 
-    private fun JmAlbumMeta.toListItem(fullTags: List<String> = tags().orEmpty()): UserCollectComicListResponse.ListItem {
+    private fun JmAlbumMeta.toListItem(
+        fullTags: List<String> = tags().orEmpty(),
+        roles: List<String> = emptyList(),
+        works: List<String> = emptyList(),
+    ): UserCollectComicListResponse.ListItem {
         return UserCollectComicListResponse.ListItem(
             id = id().orEmpty(),
             author = authors().orEmpty().firstOrNull().orEmpty(),
@@ -250,7 +366,9 @@ class UserRepositoryImpl(
             image = image().orEmpty(),
             category = category().toCollectCategory(),
             category_sub = subCategory().toCollectCategory(),
-            tags = if (fullTags.isEmpty()) null else fullTags
+            tags = if (fullTags.isEmpty()) null else fullTags,
+            actors = roles.ifEmpty { null },
+            works = works.ifEmpty { null },
         )
     }
 

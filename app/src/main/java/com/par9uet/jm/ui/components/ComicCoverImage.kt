@@ -27,23 +27,102 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import com.par9uet.jm.cache.comicCoverCacheKey
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.network.ComicCoverUrlResolver
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.store.RemoteSettingManager
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ToastManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.compose.getKoin
+
+/**
+ * 用于联网详情和本地缓存详情的统一漫画编号交互：短按复制，长按加载详情。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ComicIdChip(
+    comicId: Int,
+    modifier: Modifier = Modifier,
+    toastManager: ToastManager = getKoin().get(),
+) {
+    val clipboardManager = LocalClipboardManager.current
+    val comicRepository: ComicRepository = getKoin().get()
+    val scope = rememberCoroutineScope()
+    var showDetailDialog by remember { mutableStateOf(false) }
+    var detailInfoText by remember { mutableStateOf("") }
+    var detailLoading by remember { mutableStateOf(false) }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier.combinedClickable(
+            onClick = {
+                clipboardManager.setText(AnnotatedString(comicId.toString()))
+                toastManager.showAsync("已复制漫画编码：$comicId")
+            },
+            onLongClick = {
+                detailLoading = true
+                showDetailDialog = true
+                scope.launch {
+                    detailInfoText = buildComicDetailText(comicRepository, comicId)
+                    detailLoading = false
+                }
+            },
+        ),
+    ) {
+        Text(
+            text = "JM$comicId",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+
+    if (showDetailDialog) {
+        AlertDialog(
+            onDismissRequest = { showDetailDialog = false },
+            title = { Text("漫画详情 (JM$comicId)", fontWeight = FontWeight.Bold) },
+            text = {
+                if (detailLoading) {
+                    Text("加载中…")
+                } else {
+                    Text(
+                        text = detailInfoText,
+                        fontSize = 11.sp,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = adaptiveDialogMaxHeight(400.dp))
+                            .verticalScroll(rememberScrollState()),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    clipboardManager.setText(AnnotatedString(detailInfoText))
+                    toastManager.showAsync("已复制详情信息")
+                }) { Text("复制") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDetailDialog = false }) { Text("关闭") }
+            },
+        )
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -52,10 +131,12 @@ fun ComicCoverImage(
     modifier: Modifier = Modifier.fillMaxWidth(),
     showIdChip: Boolean = false,
     remoteSettingManager: RemoteSettingManager = getKoin().get(),
+    localSettingManager: LocalSettingManager = getKoin().get(),
     imageLoader: ImageLoader = getKoin().get(),
     toastManager: ToastManager = getKoin().get(),
 ) {
     val remoteSetting by remoteSettingManager.remoteSettingState.collectAsState()
+    val localSetting by localSettingManager.localSettingState.collectAsState()
     val clipboardManager = LocalClipboardManager.current
     val comicRepository: ComicRepository = getKoin().get()
     val scope = rememberCoroutineScope()
@@ -71,6 +152,8 @@ fun ComicCoverImage(
     Box(modifier = modifier) {
         FallbackAsyncImage(
             coverUrls = coverUrls,
+            cacheKey = comicCoverCacheKey(comic.id, localSetting.coverCacheDurationHours),
+            cacheEnabled = localSetting.coverCacheDurationHours > 0,
             imageLoader = imageLoader,
             contentDescription = "${comic.name}的封面",
             contentScale = ContentScale.Crop,
@@ -150,16 +233,32 @@ fun ComicCoverImage(
 @Composable
 fun FallbackAsyncImage(
     coverUrls: List<String>,
+    cacheKey: String? = null,
+    cacheEnabled: Boolean = true,
     imageLoader: ImageLoader,
     contentDescription: String?,
     contentScale: ContentScale,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     var coverIndex by remember(coverUrls) { mutableStateOf(0) }
     val coverUrl = coverUrls.getOrNull(coverIndex)
     if (coverUrl != null) {
+        val request = remember(context, coverUrl, cacheKey, cacheEnabled) {
+            ImageRequest.Builder(context)
+                .data(coverUrl)
+                .memoryCachePolicy(if (cacheEnabled) CachePolicy.ENABLED else CachePolicy.DISABLED)
+                .diskCachePolicy(if (cacheEnabled) CachePolicy.ENABLED else CachePolicy.DISABLED)
+                .apply {
+                    cacheKey?.let {
+                        memoryCacheKey(it)
+                        diskCacheKey(it)
+                    }
+                }
+                .build()
+        }
         AsyncImage(
-            model = coverUrl,
+            model = request,
             imageLoader = imageLoader,
             contentDescription = contentDescription,
             contentScale = contentScale,

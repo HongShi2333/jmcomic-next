@@ -1,5 +1,6 @@
 package com.par9uet.jm.retrofit.model
 
+import com.google.gson.annotations.SerializedName
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
 
@@ -11,7 +12,12 @@ data class ComicDetailResponse(
     val total_views: Int,
     val likes: Int,
     val comment_total: Int,
-    val tags: List<String>,
+    val tags: List<String> = emptyList(),
+    @SerializedName(
+        value = "hidden_tags",
+        alternate = ["hiddenTags", "tags_hidden", "tagsHide", "tags_hide", "hidden_tag"]
+    )
+    val hidden_tags: List<String>? = null,
     val actors: List<String>,
     val works: List<String>,
     val is_favorite: Boolean,
@@ -34,7 +40,10 @@ data class ComicDetailResponse(
             readCount = total_views,
             likeCount = likes,
             commentCount = comment_total,
-            tagList = tags,
+            tagList = listOfNotNull(tags, hidden_tags)
+                .flatten()
+                .filter { it.isNotBlank() }
+                .distinct(),
             roleList = actors,
             workList = works,
             isLike = liked,

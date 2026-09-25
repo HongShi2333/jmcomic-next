@@ -21,6 +21,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -88,41 +90,47 @@ fun UserHistoryComicScreen(
     CommonScaffold(
         title = "历史浏览"
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize()
+        PullToRefreshBox(
+            isRefreshing = historyComicLazyPagingItems.loadState.refresh is LoadState.Loading,
+            state = rememberPullToRefreshState(),
+            onRefresh = userViewModel::refreshHistoryComics,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            if (historyEditState.editing) {
-                HistoryEditBar(
-                    selectedCount = historyEditState.selectedComicIds.size,
-                    onClose = userViewModel::clearHistorySelection,
-                    onDownload = { userViewModel.cacheHistoryComics(selectedComics) },
-                    onDelete = { showDeleteConfirmDialog = true }
-                )
-            }
-            if (historyComicLazyPagingItems.loadState.refresh is LoadState.Loading && historyComicLazyPagingItems.itemCount == 0) {
-                UserHistoryComicSkeleton()
-            } else {
-                PullRefreshAndLoadMoreGrid(
-                    modifier = Modifier.fillMaxSize(),
-                    lazyPagingItems = historyComicLazyPagingItems,
-                    key = { it.id },
-                    columns = adaptiveComicGridCells(localSetting.historyGridColumns),
-                ) { comic ->
-                    Comic(
-                        comic = comic,
-                        editing = historyEditState.editing,
-                        selected = comic.id in historyEditState.selectedComicIds,
-                        onLongClick = {
-                            if (historyEditState.editing) {
-                                userViewModel.toggleHistorySelected(comic.id)
-                            } else {
-                                userViewModel.enterHistoryEdit(comic.id)
-                            }
-                        },
-                        onToggleSelected = {
-                            userViewModel.toggleHistorySelected(comic.id)
-                        }
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (historyEditState.editing) {
+                    HistoryEditBar(
+                        selectedCount = historyEditState.selectedComicIds.size,
+                        onClose = userViewModel::clearHistorySelection,
+                        onDownload = { userViewModel.cacheHistoryComics(selectedComics) },
+                        onDelete = { showDeleteConfirmDialog = true }
                     )
+                }
+                if (historyComicLazyPagingItems.loadState.refresh is LoadState.Loading && historyComicLazyPagingItems.itemCount == 0) {
+                    UserHistoryComicSkeleton()
+                } else {
+                    PullRefreshAndLoadMoreGrid(
+                        modifier = Modifier.fillMaxSize(),
+                        lazyPagingItems = historyComicLazyPagingItems,
+                        key = { it.id },
+                        columns = adaptiveComicGridCells(localSetting.historyGridColumns),
+                        enablePullRefresh = false,
+                    ) { comic ->
+                        Comic(
+                            comic = comic,
+                            editing = historyEditState.editing,
+                            selected = comic.id in historyEditState.selectedComicIds,
+                            onLongClick = {
+                                if (historyEditState.editing) {
+                                    userViewModel.toggleHistorySelected(comic.id)
+                                } else {
+                                    userViewModel.enterHistoryEdit(comic.id)
+                                }
+                            },
+                            onToggleSelected = {
+                                userViewModel.toggleHistorySelected(comic.id)
+                            }
+                        )
+                    }
                 }
             }
         }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -64,6 +65,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -106,12 +109,14 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.data.models.AiChatConversation
+import com.par9uet.jm.data.models.AiChatModel
 import com.par9uet.jm.data.models.AiChatMessage
 import com.par9uet.jm.data.models.AiPersona
 import com.par9uet.jm.data.models.AiSearchEngineProvider
 import com.par9uet.jm.data.models.AiSearchSettings
 import com.par9uet.jm.repository.WebSearchResult
 import com.par9uet.jm.store.ToastManager
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.ui.viewModel.AiChatViewModel
 import com.par9uet.jm.ui.components.adaptiveDialogMaxHeight
 import kotlinx.coroutines.launch
@@ -126,9 +131,11 @@ import kotlin.math.roundToInt
 @Composable
 fun AiChatScreen(
     aiChatViewModel: AiChatViewModel = koinActivityViewModel(),
-    toastManager: ToastManager = getKoin().get()
+    toastManager: ToastManager = getKoin().get(),
+    localSettingManager: LocalSettingManager = getKoin().get()
 ) {
     val uiState by aiChatViewModel.uiState.collectAsState()
+    val localSetting by localSettingManager.localSettingState.collectAsState()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
     val activeConversation = uiState.conversations.firstOrNull {
@@ -170,7 +177,9 @@ fun AiChatScreen(
                     onSearchSettingsChange = aiChatViewModel::changeSearchSettings,
                     onSend = aiChatViewModel::send,
                     onStop = aiChatViewModel::stopGenerating,
-                    toastManager = toastManager
+                    toastManager = toastManager,
+                    modelId = localSetting.aiModel,
+                    onModelChange = localSettingManager::updateAiModel
                 )
             }
         } else {
@@ -209,7 +218,9 @@ fun AiChatScreen(
                     onSearchSettingsChange = aiChatViewModel::changeSearchSettings,
                     onSend = aiChatViewModel::send,
                     onStop = aiChatViewModel::stopGenerating,
-                    toastManager = toastManager
+                    toastManager = toastManager,
+                    modelId = localSetting.aiModel,
+                    onModelChange = localSettingManager::updateAiModel
                 )
             }
         }
@@ -249,7 +260,9 @@ private fun AiChatContent(
     onSearchSettingsChange: (AiSearchSettings) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
-    toastManager: ToastManager
+    toastManager: ToastManager,
+    modelId: String,
+    onModelChange: (String) -> Unit
 ) {
     Column(
         modifier = modifier.background(MaterialTheme.colorScheme.surface)
@@ -260,9 +273,10 @@ private fun AiChatContent(
             showDrawerButton = showDrawerButton,
             onOpenDrawer = onOpenDrawer,
             onNewConversation = onNewConversation,
-            onOpenPersonaSwitch = onOpenPersonaSwitch
+            onOpenPersonaSwitch = onOpenPersonaSwitch,
+            modelId = modelId,
+            onModelChange = onModelChange
         )
-        HorizontalDivider()
         MessageList(
             modifier = Modifier.weight(1f),
             messages = conversation?.messages.orEmpty(),
@@ -278,9 +292,9 @@ private fun AiChatContent(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 color = MaterialTheme.colorScheme.errorContainer,
-                shape = RoundedCornerShape(12.dp)
+                shape = MaterialTheme.shapes.large
             ) {
                 Text(
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -313,41 +327,118 @@ private fun AiChatHeader(
     showDrawerButton: Boolean,
     onOpenDrawer: () -> Unit,
     onNewConversation: () -> Unit,
-    onOpenPersonaSwitch: () -> Unit
+    onOpenPersonaSwitch: () -> Unit,
+    modelId: String,
+    onModelChange: (String) -> Unit
 ) {
-    Row(
+    var modelMenuExpanded by rememberSaveable { mutableStateOf(false) }
+    Surface(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 2.dp,
     ) {
-        if (showDrawerButton) {
-            IconButton(onClick = onOpenDrawer) {
-                Icon(Icons.Rounded.Menu, contentDescription = "对话列表")
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (showDrawerButton) {
+                IconButton(onClick = onOpenDrawer) {
+                    Icon(Icons.Rounded.Menu, contentDescription = "对话列表")
+                }
             }
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium
-            )
-            if (!personaName.isNullOrBlank()) {
+
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "人格：$personaName",
+                    text = title,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = buildString {
+                        append(AiChatModel.fromId(modelId).label)
+                        if (!personaName.isNullOrBlank()) append(" · 人格：$personaName")
+                    },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-        IconButton(onClick = onOpenPersonaSwitch) {
-            Icon(Icons.Rounded.Face, contentDescription = "切换人格面具")
-        }
-        IconButton(onClick = onNewConversation) {
-            Icon(Icons.Rounded.Add, contentDescription = "新建对话")
+
+            Box {
+                val model = AiChatModel.fromId(modelId)
+                AssistChip(
+                    onClick = { modelMenuExpanded = true },
+                    label = { Text(model.label, maxLines = 1) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (model == AiChatModel.NoTrackAi) {
+                                Icons.Rounded.TravelExplore
+                            } else {
+                                Icons.Rounded.AutoAwesome
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
+                    colors = AssistChipDefaults.assistChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    )
+                )
+                DropdownMenu(
+                    expanded = modelMenuExpanded,
+                    onDismissRequest = { modelMenuExpanded = false }
+                ) {
+                    AiChatModel.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(option.label)
+                                    Text(
+                                        option.subtitle,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = if (option == AiChatModel.NoTrackAi) {
+                                        Icons.Rounded.TravelExplore
+                                    } else {
+                                        Icons.Rounded.AutoAwesome
+                                    },
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                onModelChange(option.id)
+                                modelMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            IconButton(onClick = onOpenPersonaSwitch) {
+                Icon(Icons.Rounded.Face, contentDescription = "切换人格面具")
+            }
+            IconButton(onClick = onNewConversation) {
+                Icon(Icons.Rounded.Add, contentDescription = "新建对话")
+            }
         }
     }
 }
@@ -387,25 +478,46 @@ private fun ConversationPanel(
             .fillMaxHeight()
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
     ) {
-        Row(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(12.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainer,
         ) {
-            Text(
-                modifier = Modifier.weight(1f),
-                text = "对话管理",
-                style = MaterialTheme.typography.titleLarge
-            )
-            IconButton(onClick = onNewConversation) {
-                Icon(Icons.Rounded.Add, contentDescription = "新建对话")
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(36.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.Article, contentDescription = null)
+                    }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("AI 工作区", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        text = "${conversations.size} 个对话",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onNewConversation) {
+                    Icon(Icons.Rounded.Add, contentDescription = "新建对话")
+                }
             }
         }
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
+            contentPadding = PaddingValues(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(conversations, key = { it.id }) { conversation ->
@@ -515,25 +627,47 @@ private fun MessageList(
     }
 
     if (messages.isEmpty() && !showSearchCard) {
-        Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    modifier = Modifier.size(48.dp),
-                    imageVector = Icons.Rounded.AutoAwesome,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "开始一段 AI 对话",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "可切换人格面具、联网搜索、深度思考？",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 30.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.size(64.dp),
+                        shape = RoundedCornerShape(22.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                modifier = Modifier.size(30.dp),
+                                imageVector = Icons.Rounded.AutoAwesome,
+                                contentDescription = null,
+                            )
+                        }
+                    }
+                    Text(
+                        text = "开始一段 AI 对话",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "在下方输入问题，也可以随时切换模型、人格面具和联网搜索。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         return
@@ -1268,60 +1402,69 @@ private fun ChatInputBar(
         modifier = Modifier
             .fillMaxWidth()
             .imePadding(),
-        tonalElevation = 3.dp,
-        color = MaterialTheme.colorScheme.surfaceContainer
+        tonalElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = deepThinkingEnabled,
-                    onClick = { onDeepThinkingChange(!deepThinkingEnabled) },
-                    leadingIcon = {
-                        Icon(
-                            modifier = Modifier.size(18.dp),
-                            imageVector = Icons.Rounded.Psychology,
-                            contentDescription = null
-                        )
-                    },
-                    label = { Text("深度思考") }
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                FilterChip(
-                    selected = webSearchEnabled,
-                    onClick = { onWebSearchChange(!webSearchEnabled) },
-                    leadingIcon = {
-                        Icon(
-                            modifier = Modifier.size(18.dp),
-                            imageVector = Icons.Rounded.TravelExplore,
-                            contentDescription = null
-                        )
-                    },
-                    label = { Text("联网搜索") }
-                )
-                if (searchSettings.aiAutoSearch) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    AssistChip(
-                        onClick = { searchSettingsOpen = true },
-                        label = { Text("AI 自主") },
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = deepThinkingEnabled,
+                        onClick = { onDeepThinkingChange(!deepThinkingEnabled) },
                         leadingIcon = {
                             Icon(
-                                modifier = Modifier.size(16.dp),
-                                imageVector = Icons.Rounded.AutoAwesome,
+                                modifier = Modifier.size(18.dp),
+                                imageVector = Icons.Rounded.Psychology,
                                 contentDescription = null
                             )
                         },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            labelColor = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
+                        label = { Text("深度思考") }
                     )
+                    FilterChip(
+                        selected = webSearchEnabled,
+                        onClick = { onWebSearchChange(!webSearchEnabled) },
+                        leadingIcon = {
+                            Icon(
+                                modifier = Modifier.size(18.dp),
+                                imageVector = Icons.Rounded.TravelExplore,
+                                contentDescription = null
+                            )
+                        },
+                        label = { Text("联网搜索") }
+                    )
+                    if (searchSettings.aiAutoSearch) {
+                        AssistChip(
+                            onClick = { searchSettingsOpen = true },
+                            label = { Text("AI 自主") },
+                            leadingIcon = {
+                                Icon(
+                                    modifier = Modifier.size(16.dp),
+                                    imageVector = Icons.Rounded.AutoAwesome,
+                                    contentDescription = null
+                                )
+                            },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                labelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        )
+                    }
                 }
-                Spacer(modifier = Modifier.weight(1f))
                 IconButton(onClick = { searchSettingsOpen = true }) {
                     Icon(
                         imageVector = Icons.Rounded.Settings,
@@ -1350,15 +1493,24 @@ private fun ChatInputBar(
                     ),
                     enabled = !isSending
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(
-                    onClick = if (isSending) onStop else onSend,
-                    enabled = isSending || input.isNotBlank()
+                Spacer(modifier = Modifier.width(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isSending || input.isNotBlank()) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
                 ) {
-                    Icon(
-                        imageVector = if (isSending) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
-                        contentDescription = if (isSending) "停止生成" else "发送"
-                    )
+                    IconButton(
+                        onClick = if (isSending) onStop else onSend,
+                        enabled = isSending || input.isNotBlank()
+                    ) {
+                        Icon(
+                            imageVector = if (isSending) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.Send,
+                            contentDescription = if (isSending) "停止生成" else "发送"
+                        )
+                    }
                 }
             }
         }

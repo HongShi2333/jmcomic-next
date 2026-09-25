@@ -9,6 +9,8 @@ import coil.ImageLoader
 import coil.request.ErrorResult
 import coil.request.ImageRequest
 import coil.request.SuccessResult
+import com.par9uet.jm.cache.applyComicCoverCache
+import com.par9uet.jm.cache.comicCoverCacheKey
 import com.par9uet.jm.cache.cachePathLength
 import com.par9uet.jm.cache.isCacheMigrationRunning
 import com.par9uet.jm.cache.getComicChapterDownloadPath
@@ -158,6 +160,12 @@ class DownloadComicWorker(
             for (coverUrl in coverUrls) {
                 val request = ImageRequest.Builder(appContext)
                     .data(coverUrl)
+                    .applyComicCoverCache(
+                        comicCoverCacheKey(
+                            coverOwnerId,
+                            localSettingManager.localSettingState.value.coverCacheDurationHours,
+                        )
+                    )
                     .allowHardware(false)
                     .build()
                 when (val result = imageLoader.execute(request)) {

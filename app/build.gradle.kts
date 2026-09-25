@@ -14,11 +14,21 @@ val versionProps = Properties().apply {
     }
 }
 
+val secretProps = Properties().apply {
+    val file = rootProject.file("secrets.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
 val versionCodeProp = versionProps.getProperty("VERSION_CODE", "1").toIntOrNull()
 val versionNameProp: String = versionProps.getProperty("VERSION_NAME", "1.1.0")
 
 // Secrets are supplied through untracked Gradle properties or CI variables.
-fun secretProperty(name: String): String = providers.gradleProperty(name).orNull.orEmpty()
+// Nothing sensitive is committed to this public source package.
+fun secretProperty(name: String): String =
+    providers.gradleProperty(name).orNull
+        ?: providers.environmentVariable(name).orNull
+        ?: secretProps.getProperty(name)
+        ?: ""
 
 fun getGitHash() = providers
     .exec {
@@ -75,7 +85,6 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

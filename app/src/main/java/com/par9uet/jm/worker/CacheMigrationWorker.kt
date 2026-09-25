@@ -17,6 +17,7 @@ import com.par9uet.jm.R
 import com.par9uet.jm.cache.NOMEDIA_FILE_NAME
 import com.par9uet.jm.cache.ensureDownloadTreeHiddenFromGallery
 import com.par9uet.jm.cache.cachePathExists
+import com.par9uet.jm.cache.cachePathHasContent
 import com.par9uet.jm.cache.cachePathLength
 import com.par9uet.jm.cache.cachePathSize
 import com.par9uet.jm.cache.deleteCachePath
@@ -136,7 +137,19 @@ class CacheMigrationWorker(
                     chapters.first().groupId.takeIf { it != 0 } ?: chapters.first().id,
                     "生成 JSON"
                 )
-                runCatching { writeDocumentComicCacheConfig(appContext, chapters.first(), chapters) }
+                // Metadata is part of the cache, not disposable migration
+                // state. A failed manifest write must abort before deleting
+                // the source tree, otherwise json/cover files disappear and
+                // the next local-read attempt has no stable index.
+                writeDocumentComicCacheConfig(appContext, chapters.first(), chapters)
+                val rootPath = chapters.first().zipPath
+                    .takeIf { it.isNotBlank() }
+                    ?.let { sourceComicRoot(it) }
+                    ?: getComicDownloadRootPathForRecord(chapters.first())
+                val configPath = rootPath?.let { findCacheChildPath(appContext, it, "config.json") }
+                check(configPath != null && cachePathHasContent(appContext, configPath)) {
+                    "缓存索引写入失败"
+                }
             }
             sourcePaths.sortedByDescending { it.length }.forEach { path ->
                 runCatching { deleteCachePath(appContext, path) }
@@ -328,6 +341,9 @@ class CacheMigrationWorker(
             if (isEmpty) DocumentsContract.deleteDocument(appContext.contentResolver, root)
         }
     }
+
+    private fun getComicDownloadRootPathForRecord(record: DownloadComic): String? =
+        record.coverPath.takeIf { it.isNotBlank() }?.let { sourceComicRoot(it) }
 
     private fun mimeType(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
         "webp" -> "image/webp"

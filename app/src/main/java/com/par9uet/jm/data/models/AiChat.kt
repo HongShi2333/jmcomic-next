@@ -60,6 +60,22 @@ enum class AiSearchEngineProvider(val label: String, val requiresKey: Boolean) {
     SEARXNG("SearXNG", false)
 }
 
+/** AI 对话模型。模型切换只影响后续请求，不改变已有对话记录。 */
+enum class AiChatModel(
+    val id: String,
+    val label: String,
+    val subtitle: String
+) {
+    UnlimitedAi("unlimitedai", "Unlimited AI", "默认模型"),
+    NoTrackAi("notrack-ai", "NoTrack AI", "匿名备用模型");
+
+    companion object {
+        fun fromId(id: String?): AiChatModel {
+            return entries.firstOrNull { it.id == id } ?: UnlimitedAi
+        }
+    }
+}
+
 /**
  * 联网搜索设置。
  *

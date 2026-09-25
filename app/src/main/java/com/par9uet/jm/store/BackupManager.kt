@@ -2,7 +2,6 @@ package com.par9uet.jm.store
 
 import android.content.Context
 import android.net.Uri
-import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
@@ -12,22 +11,19 @@ import com.par9uet.jm.data.models.AiPersona
 import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.utils.logError
 import java.security.MessageDigest
-import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
 
+// 备份保护方式
 const val BACKUP_PROTECTION_NONE = "none"
 const val BACKUP_PROTECTION_PASSWORD = "password"
 const val BACKUP_PROTECTION_PATTERN = "pattern"
 const val BACKUP_PROTECTION_BOTH = "both"
-const val BACKUP_FORMAT_VERSION = 5
 
-private const val KDF_ITERATIONS = 210_000
-private const val KEY_BITS = 256
+// 备份文件格式版本（v4 新增可选的本机生物识别绑定）
+const val BACKUP_FORMAT_VERSION = 4
 
+/**
+ * 用户选择要备份的内容类型。
+ */
 data class BackupContentOptions(
     val includeLocalSetting: Boolean = true,
     val includeDownloadPath: Boolean = false,
@@ -35,20 +31,20 @@ data class BackupContentOptions(
     val includePersonas: Boolean = false,
     val includeComicCache: Boolean = false,
 ) {
-    val isEmpty: Boolean get() = !includeLocalSetting && !includeDownloadPath &&
-        !includeAiChats && !includePersonas && !includeComicCache
+    val isEmpty: Boolean get() = !includeLocalSetting && !includeDownloadPath && !includeAiChats && !includePersonas && !includeComicCache
 }
 
+/**
+ * 备份文件元信息：包含版本、时间戳、保护方式与备份内容标记。
+ */
 data class BackupMeta(
     val version: Int = BACKUP_FORMAT_VERSION,
     val timestamp: Long = System.currentTimeMillis(),
     val protectionType: String = BACKUP_PROTECTION_NONE,
     val passwordHash: String? = null,
     val patternHash: String? = null,
+    // 可选的本机生物识别快捷验证绑定；密码/图形仍是跨设备恢复的保底凭据
     val biometricBinding: String? = null,
-    val encryptionSalt: String? = null,
-    val encryptionIv: String? = null,
-    val kdfIterations: Int = KDF_ITERATIONS,
     val includeLocalSetting: Boolean = true,
     val includeDownloadPath: Boolean = false,
     val includeAiChats: Boolean = false,
@@ -57,8 +53,20 @@ data class BackupMeta(
     val comicCacheCount: Int = 0,
 )
 
-data class ChapterBackup(val id: Int, val name: String, val sortOrder: Long)
+/**
+ * 缓存目录备份：单个章节的信息。
+ * 不包含图片文件，只保留章节 ID（即漫画 ID）和排序信息。
+ */
+data class ChapterBackup(
+    val id: Int,
+    val name: String,
+    val sortOrder: Long,
+)
 
+/**
+ * 缓存目录备份：一个漫画组的信息。
+ * 多章节漫画会包含多个 ChapterBackup；单篇漫画 chapters 列表只有一个元素（id 与 groupId 相同）。
+ */
 data class ComicGroupBackup(
     val id: Int,
     val name: String,
@@ -69,18 +77,32 @@ data class ComicGroupBackup(
     val chapterCount: Int get() = chapters.size
 }
 
-data class ComicCacheBackup(val groups: List<ComicGroupBackup> = emptyList())
+/**
+ * 缓存目录备份整体结构。
+ */
+data class ComicCacheBackup(
+    val groups: List<ComicGroupBackup> = emptyList(),
+)
 
+/**
+ * 备份文件结构：meta + data。
+ * v2: data 下分 localSetting / aiChats / aiPersonas 三段。
+ * v1（兼容旧文件）: data 直接是 LocalSetting 的 JSON。
+ */
 data class BackupFile(
     val meta: BackupMeta,
-    var data: JsonObject = JsonObject(),
-    val encryptedData: String? = null,
+    val data: JsonObject,
 )
 
 class BackupManager {
-    private val gson: Gson = GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create()
-    private var pendingPassword: String? = null
+    private val gson: Gson = GsonBuilder()
+        .disableHtmlEscaping()
+        .setPrettyPrinting()
+        .create()
 
+    /**
+     * 创建备份 JSON 字符串。
+     */
     fun createBackup(
         localSetting: LocalSetting?,
         aiChats: List<AiChatConversation>?,
@@ -94,20 +116,25 @@ class BackupManager {
     ): String {
         require(!options.isEmpty) { "至少需要选择一项备份内容" }
         require(protectionType != BACKUP_PROTECTION_NONE) { "备份必须设置密码或图形保护" }
-        val credential = credential(protectionType, password, pattern)
-        val salt = ByteArray(16).also(SecureRandom()::nextBytes)
-        val iv = ByteArray(12).also(SecureRandom()::nextBytes)
-        val data = buildData(localSetting, aiChats, personas, comicCache, options)
-        val encrypted = encrypt(gson.toJson(data), credential, salt, iv, KDF_ITERATIONS)
         val meta = BackupMeta(
+            version = BACKUP_FORMAT_VERSION,
+            timestamp = System.currentTimeMillis(),
             protectionType = protectionType,
-            passwordHash = password?.takeIf { needsPassword(protectionType) }
-                ?.let { verifier("password:$it", salt, KDF_ITERATIONS) },
-            patternHash = pattern?.takeIf { needsPattern(protectionType) }
-                ?.let { verifier("pattern:$it", salt, KDF_ITERATIONS) },
+            passwordHash = when (protectionType) {
+                BACKUP_PROTECTION_PASSWORD, BACKUP_PROTECTION_BOTH -> {
+                    requireNotNull(password) { "password must not be null for protection $protectionType" }
+                    sha256(password)
+                }
+                else -> null
+            },
+            patternHash = when (protectionType) {
+                BACKUP_PROTECTION_PATTERN, BACKUP_PROTECTION_BOTH -> {
+                    requireNotNull(pattern) { "pattern must not be null for protection $protectionType" }
+                    sha256(pattern)
+                }
+                else -> null
+            },
             biometricBinding = biometricBinding,
-            encryptionSalt = encode(salt),
-            encryptionIv = encode(iv),
             includeLocalSetting = options.includeLocalSetting,
             includeDownloadPath = options.includeDownloadPath,
             includeAiChats = options.includeAiChats,
@@ -115,186 +142,178 @@ class BackupManager {
             includeComicCache = options.includeComicCache && comicCache != null,
             comicCacheCount = comicCache?.groups?.size ?: 0,
         )
-        return gson.toJson(BackupFile(meta = meta, encryptedData = encode(encrypted)))
+
+        val data = JsonObject()
+        if ((options.includeLocalSetting || options.includeDownloadPath) && localSetting != null) {
+            val sanitized = localSetting.copy(
+                appLockPassword = "",
+                appLockPattern = "",
+                appLockDuressEnabled = false,
+                appLockDuressPassword = "",
+                appLockDuressPattern = "",
+                downloadTreeUri = if (options.includeDownloadPath) localSetting.downloadTreeUri else "",
+            )
+            data.add("localSetting", gson.toJsonTree(sanitized))
+        }
+        if (options.includeAiChats && aiChats != null) {
+            data.add("aiChats", gson.toJsonTree(aiChats))
+        }
+        if (options.includePersonas && personas != null) {
+            data.add("aiPersonas", gson.toJsonTree(personas))
+        }
+        if (options.includeComicCache && comicCache != null) {
+            data.add("comicCache", gson.toJsonTree(comicCache))
+        }
+
+        val backup = BackupFile(meta = meta, data = data)
+        return gson.toJson(backup)
     }
 
+    /**
+     * 解析备份 JSON 字符串，兼容 v1/v2。
+     */
     fun parseBackup(json: String): Result<BackupFile> = runCatching {
         val obj = JsonParser.parseString(json).asJsonObject
         val meta = gson.fromJson(obj.getAsJsonObject("meta"), BackupMeta::class.java)
             ?: error("备份文件缺少 meta 字段")
-        val data = obj.getAsJsonObject("data") ?: JsonObject()
-        val encryptedData = obj.get("encryptedData")?.takeUnless { it.isJsonNull }?.asString
-        if (meta.version >= BACKUP_FORMAT_VERSION && encryptedData.isNullOrBlank()) {
-            error("加密备份缺少 encryptedData")
-        }
-        BackupFile(meta, data, encryptedData)
+        val data = obj.getAsJsonObject("data") ?: error("备份文件缺少 data 字段")
+        BackupFile(meta = meta, data = data)
     }
 
+    /**
+     * 从备份中提取 [LocalSetting]，兼容 v1 旧格式。
+     */
     fun extractLocalSetting(backup: BackupFile): LocalSetting? {
-        backup.data.getAsJsonObject("localSetting")?.let { return gson.fromJson(it, LocalSetting::class.java) }
-        return if (backup.meta.version <= 1) {
-            runCatching { gson.fromJson(backup.data, LocalSetting::class.java) }.getOrNull()
-        } else null
+        // v2 格式：data.localSetting
+        val obj = backup.data.getAsJsonObject("localSetting")
+        if (obj != null) return gson.fromJson(obj, LocalSetting::class.java)
+        // v1 旧格式：data 直接是 LocalSetting
+        if (backup.meta.version <= 1) {
+            return runCatching { gson.fromJson(backup.data, LocalSetting::class.java) }.getOrNull()
+        }
+        return null
     }
 
+    /**
+     * 从备份中提取 AI 聊天记录。
+     */
     fun extractAiChats(backup: BackupFile): List<AiChatConversation> {
-        val array = backup.data.getAsJsonArray("aiChats") ?: return emptyList()
-        return runCatching { gson.fromJson(array, Array<AiChatConversation>::class.java).toList() }
-            .getOrDefault(emptyList())
+        val arr = backup.data.getAsJsonArray("aiChats") ?: return emptyList()
+        return runCatching {
+            gson.fromJson(arr, Array<AiChatConversation>::class.java)?.toList() ?: emptyList()
+        }.getOrDefault(emptyList())
     }
 
+    /**
+     * 从备份中提取 AI 人格面具。
+     */
     fun extractPersonas(backup: BackupFile): List<AiPersona> {
-        val array = backup.data.getAsJsonArray("aiPersonas") ?: return emptyList()
-        return runCatching { gson.fromJson(array, Array<AiPersona>::class.java).toList() }
-            .getOrDefault(emptyList())
+        val arr = backup.data.getAsJsonArray("aiPersonas") ?: return emptyList()
+        return runCatching {
+            gson.fromJson(arr, Array<AiPersona>::class.java)?.toList() ?: emptyList()
+        }.getOrDefault(emptyList())
     }
 
+    /**
+     * 从备份中提取缓存目录备份信息。
+     * v1/v2 旧备份无此段，返回空。
+     */
     fun extractComicCache(backup: BackupFile): ComicCacheBackup {
         val obj = backup.data.getAsJsonObject("comicCache") ?: return ComicCacheBackup()
-        return runCatching { gson.fromJson(obj, ComicCacheBackup::class.java) }.getOrDefault(ComicCacheBackup())
+        return runCatching {
+            gson.fromJson(obj, ComicCacheBackup::class.java) ?: ComicCacheBackup()
+        }.getOrDefault(ComicCacheBackup())
     }
 
-    fun needsPassword(backup: BackupFile): Boolean = needsPassword(backup.meta.protectionType)
-    fun needsPattern(backup: BackupFile): Boolean = needsPattern(backup.meta.protectionType)
+    fun needsPassword(backup: BackupFile): Boolean {
+        return backup.meta.protectionType == BACKUP_PROTECTION_PASSWORD ||
+            backup.meta.protectionType == BACKUP_PROTECTION_BOTH
+    }
 
+    fun needsPattern(backup: BackupFile): Boolean {
+        return backup.meta.protectionType == BACKUP_PROTECTION_PATTERN ||
+            backup.meta.protectionType == BACKUP_PROTECTION_BOTH
+    }
+
+    /**
+     * 校验密码（用于恢复时的核验）。
+     */
     fun verifyPassword(backup: BackupFile, password: String): Boolean {
-        val valid = verifyFactor(backup, "password:$password", backup.meta.passwordHash)
-        if (!valid) return false
-        if (backup.meta.version < BACKUP_FORMAT_VERSION) return true
-        return if (backup.meta.protectionType == BACKUP_PROTECTION_PASSWORD) {
-            unlock(backup, password, null)
-        } else {
-            pendingPassword = password
-            true
-        }
+        val expected = backup.meta.passwordHash ?: return false
+        return constantEquals(expected, sha256(password))
     }
 
     fun verifyPattern(backup: BackupFile, pattern: String): Boolean {
-        val valid = verifyFactor(backup, "pattern:$pattern", backup.meta.patternHash)
-        if (!valid) return false
-        if (backup.meta.version < BACKUP_FORMAT_VERSION) return true
-        val password = pendingPassword
-        pendingPassword = null
-        return unlock(backup, password, pattern)
+        val expected = backup.meta.patternHash ?: return false
+        return constantEquals(expected, sha256(pattern))
     }
 
-    fun readFromUri(context: Context, uri: Uri): String? = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-    }.getOrElse {
-        logError("BackupManager", "读取备份文件失败: ${it.message}")
-        null
+    fun readFromUri(context: Context, uri: Uri): String? {
+        return runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+        }.getOrElse {
+            logError("BackupManager", "读取备份文件失败: ${it.message}")
+            null
+        }
     }
 
+    /**
+     * 从 DownloadComicDao 的数据生成缓存目录备份。
+     * 只备份漫画编号与章节信息，不备份图片文件本身。
+     */
     suspend fun buildComicCacheBackup(
         allDownloads: List<com.par9uet.jm.database.model.DownloadComic>
     ): ComicCacheBackup {
-        val groups = allDownloads.groupBy { it.groupId.takeIf { id -> id != 0 } ?: it.id }
-            .map { (groupId, items) ->
-                val first = items.first()
-                ComicGroupBackup(
-                    id = groupId,
-                    name = first.groupName.ifBlank { first.name },
-                    authors = first.authorList,
-                    tags = first.tagList,
-                    chapters = items.sortedBy { it.createTime }.map {
-                        ChapterBackup(it.id, it.chapterName, it.createTime)
-                    },
-                )
-            }.sortedBy { it.id }
-        return ComicCacheBackup(groups)
+        // 按 groupId 聚合（单篇漫画 groupId=0，以自身 id 作为组 ID）
+        val grouped = allDownloads.groupBy { it.groupId.takeIf { g -> g != 0 } ?: it.id }
+        val groups = grouped.map { (groupId, items) ->
+            val first = items.first()
+            val chapters = items
+                .sortedBy { it.createTime }
+                .map { item ->
+                    ChapterBackup(
+                        id = item.id,
+                        name = item.chapterName,
+                        sortOrder = item.createTime,
+                    )
+                }
+            ComicGroupBackup(
+                id = groupId,
+                name = first.groupName.ifBlank { first.name },
+                authors = first.authorList,
+                tags = first.tagList,
+                chapters = chapters,
+            )
+        }.sortedBy { it.id }
+        return ComicCacheBackup(groups = groups)
     }
 
-    fun writeToUri(context: Context, uri: Uri, content: String): Boolean = runCatching {
-        context.contentResolver.openOutputStream(uri)?.use {
-            it.write(content.toByteArray(Charsets.UTF_8))
-            true
-        } ?: false
-    }.getOrElse {
-        logError("BackupManager", "写入备份文件失败: ${it.message}")
-        false
-    }
-
-    private fun buildData(
-        localSetting: LocalSetting?,
-        aiChats: List<AiChatConversation>?,
-        personas: List<AiPersona>?,
-        comicCache: ComicCacheBackup?,
-        options: BackupContentOptions,
-    ) = JsonObject().apply {
-        if ((options.includeLocalSetting || options.includeDownloadPath) && localSetting != null) {
-            add("localSetting", gson.toJsonTree(localSetting.copy(
-                appLockPassword = "",
-                appLockPattern = "",
-                downloadTreeUri = if (options.includeDownloadPath) localSetting.downloadTreeUri else "",
-            )))
-        }
-        if (options.includeAiChats && aiChats != null) add("aiChats", gson.toJsonTree(aiChats))
-        if (options.includePersonas && personas != null) add("aiPersonas", gson.toJsonTree(personas))
-        if (options.includeComicCache && comicCache != null) add("comicCache", gson.toJsonTree(comicCache))
-    }
-
-    private fun unlock(backup: BackupFile, password: String?, pattern: String?): Boolean = runCatching {
-        val salt = decode(requireNotNull(backup.meta.encryptionSalt))
-        val iv = decode(requireNotNull(backup.meta.encryptionIv))
-        val encrypted = decode(requireNotNull(backup.encryptedData))
-        val clear = decrypt(
-            encrypted,
-            credential(backup.meta.protectionType, password, pattern),
-            salt,
-            iv,
-            backup.meta.kdfIterations,
-        )
-        backup.data = JsonParser.parseString(clear).asJsonObject
-        true
-    }.getOrDefault(false)
-
-    private fun verifyFactor(backup: BackupFile, input: String, expected: String?): Boolean {
-        expected ?: return false
-        if (backup.meta.version < BACKUP_FORMAT_VERSION) {
-            return MessageDigest.isEqual(expected.toByteArray(), legacySha256(input.substringAfter(':')).toByteArray())
-        }
-        val salt = backup.meta.encryptionSalt?.let(::decode) ?: return false
-        return MessageDigest.isEqual(
-            decode(expected),
-            derive(input, salt, backup.meta.kdfIterations, 128),
-        )
-    }
-
-    private fun credential(type: String, password: String?, pattern: String?): String = when (type) {
-        BACKUP_PROTECTION_PASSWORD -> "password:${requireNotNull(password)}"
-        BACKUP_PROTECTION_PATTERN -> "pattern:${requireNotNull(pattern)}"
-        BACKUP_PROTECTION_BOTH -> "password:${requireNotNull(password)}|pattern:${requireNotNull(pattern)}"
-        else -> error("不支持无保护备份")
-    }
-
-    private fun verifier(input: String, salt: ByteArray, iterations: Int) =
-        encode(derive(input, salt, iterations, 128))
-
-    private fun encrypt(clear: String, credential: String, salt: ByteArray, iv: ByteArray, iterations: Int): ByteArray {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(derive(credential, salt, iterations, KEY_BITS), "AES"), GCMParameterSpec(128, iv))
-        return cipher.doFinal(clear.toByteArray(Charsets.UTF_8))
-    }
-
-    private fun decrypt(encrypted: ByteArray, credential: String, salt: ByteArray, iv: ByteArray, iterations: Int): String {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(derive(credential, salt, iterations, KEY_BITS), "AES"), GCMParameterSpec(128, iv))
-        return cipher.doFinal(encrypted).toString(Charsets.UTF_8)
-    }
-
-    private fun derive(input: String, salt: ByteArray, iterations: Int, bits: Int): ByteArray {
-        val spec = PBEKeySpec(input.toCharArray(), salt, iterations, bits)
-        return try {
-            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1").generateSecret(spec).encoded
-        } finally {
-            spec.clearPassword()
+    fun writeToUri(context: Context, uri: Uri, content: String): Boolean {
+        return runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(content.toByteArray(Charsets.UTF_8))
+                true
+            } ?: false
+        }.getOrElse {
+            logError("BackupManager", "写入备份文件失败: ${it.message}")
+            false
         }
     }
 
-    private fun needsPassword(type: String) = type == BACKUP_PROTECTION_PASSWORD || type == BACKUP_PROTECTION_BOTH
-    private fun needsPattern(type: String) = type == BACKUP_PROTECTION_PATTERN || type == BACKUP_PROTECTION_BOTH
-    private fun encode(bytes: ByteArray) = Base64.encodeToString(bytes, Base64.NO_WRAP)
-    private fun decode(value: String) = Base64.decode(value, Base64.NO_WRAP)
-    private fun legacySha256(input: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(input.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    private fun sha256(input: String): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest(input.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun constantEquals(a: String, b: String): Boolean {
+        if (a.length != b.length) return false
+        var result = 0
+        for (i in a.indices) {
+            result = result or (a[i].code xor b[i].code)
+        }
+        return result == 0
+    }
 }

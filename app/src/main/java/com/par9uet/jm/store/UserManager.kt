@@ -65,8 +65,7 @@ class UserManager(
                 _userState.update {
                     it.copy(
                         isError = true,
-                        errorMsg = data.message,
-                        data = User.create()
+                        errorMsg = data.message
                     )
                 }
             }

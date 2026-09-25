@@ -24,12 +24,12 @@ class TokenInterceptor(
         val tokenParam: String
 
         if (isBuiltin) {
-            // 内置 API 模式：每请求使用构建时注入的服务密钥
+            // 内置 API 模式：每请求时间戳，token 密钥 = 18comicAPP
             timestamp = System.currentTimeMillis() / 1000
             token = md5("${timestamp}${BUILTIN_TOKEN_SECRET}")
             tokenParam = "${timestamp},${BUILTIN_APP_VERSION}"
         } else {
-            // 官方 API 模式：固定时间戳，使用构建时注入的服务密钥
+            // 官方 API 模式：固定时间戳，token 密钥 = APP_DATA_SECRET（185Hcomic3PAPP7R）
             timestamp = API_TS
             token = API_TOKEN_HASH
             tokenParam = "${API_TS},${API_VERSION}"

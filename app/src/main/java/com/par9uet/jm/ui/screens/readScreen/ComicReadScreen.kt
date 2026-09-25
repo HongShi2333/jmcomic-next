@@ -51,6 +51,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,6 +74,7 @@ import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.components.adaptiveDialogMaxHeight
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
+import com.par9uet.jm.utils.VolumeKeyPageTurnDispatcher
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.getKoin
 
@@ -85,7 +87,7 @@ fun ComicReadScreen(
     localSettingManager: LocalSettingManager = getKoin().get(),
     readHistoryManager: ReadHistoryManager = getKoin().get(),
     downloadManager: DownloadManager = getKoin().get(),
-    userManager: UserManager = getKoin().get()
+    userManager: UserManager = getKoin().get(),
 ) {
     val context = LocalContext.current
     val mainNavController = LocalMainNavController.current
@@ -109,8 +111,12 @@ fun ComicReadScreen(
     var selectedCacheChapterIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var loadedComicId by comicReadViewModel.loadedComicId
     val readHistoryComicId by comicReadViewModel.readHistoryComicId
-    val readChapterIds = remember(readHistory, readHistoryComicId) {
-        if (readHistoryComicId > 0) {
+    val readChapterIds = remember(
+        readHistory,
+        readHistoryComicId,
+        localSetting.chapterReadingMemoryEnabled,
+    ) {
+        if (localSetting.chapterReadingMemoryEnabled && readHistoryComicId > 0) {
             readHistoryManager.readChapterIds(readHistoryComicId, readHistory)
         } else {
             emptySet()
@@ -150,8 +156,9 @@ fun ComicReadScreen(
         val target = value.toInt().coerceIn(0, maxOf(0, size - 1))
         if (target != currentIndexState) {
             zoomState.reset()
-            currentIndexState = target
         }
+        // Keep the toolbar and reading-memory state driven by one observable source.
+        currentIndexState = target
     }
 
     fun jumpToIndex(index: Int) {
@@ -165,15 +172,30 @@ fun ComicReadScreen(
         comicReadViewModel.showToolBar()
     }
 
+    val volumePageTurnHandler = rememberUpdatedState<(Boolean) -> Unit> { isVolumeUp ->
+        val currentIndex = comicReadViewModel.currentIndexState.intValue
+        jumpToIndex(if (isVolumeUp) currentIndex - 1 else currentIndex + 1)
+    }
+    DisposableEffect(comicId, localOnly, localSetting.volumeKeyPageTurningEnabled) {
+        if (!localSetting.volumeKeyPageTurningEnabled) {
+            onDispose { }
+        } else {
+            val unregister = VolumeKeyPageTurnDispatcher.register { isVolumeUp ->
+                volumePageTurnHandler.value(isVolumeUp)
+            }
+            onDispose { unregister() }
+        }
+    }
+
     LaunchedEffect(comicId) {
-        val onSuccess = {
-            if (loadedComicId != comicId) {
-                // 恢复上次阅读页数
-                val savedIndex = if (readHistoryComicId > 0) {
-                    readHistoryManager.lastReadPageIndex(readHistoryComicId, comicId, readHistory)
-                } else 0
-                currentIndexState = savedIndex
-                targetIndex = savedIndex
+        val readingMemoryEnabled = localSetting.comicReadingMemoryEnabled
+        val onSuccess: (Int) -> Unit = { savedIndex ->
+            if (loadedComicId != comicId || !readingMemoryEnabled) {
+                // Read the ViewModel state directly: composition can still hold
+                // the old zero page count in the frame where data arrives.
+                val restoredIndex = savedIndex.coerceIn(0, maxOf(0, comicReadViewModel.size - 1))
+                currentIndexState = restoredIndex
+                targetIndex = restoredIndex
                 loadedComicId = comicId
             } else {
                 targetIndex = currentIndexState.coerceAtLeast(0)
@@ -183,26 +205,35 @@ fun ComicReadScreen(
         }
         if (localOnly) {
             comicReadViewModel.clearComicDetail()
-            comicReadViewModel.getLocalComicPicList(comicId, context, onSuccess)
+            comicReadViewModel.getLocalComicPicList(
+                comicId = comicId,
+                context = context,
+                restoreReadingMemory = readingMemoryEnabled,
+                onSuccess = onSuccess,
+            )
         } else {
-            comicReadViewModel.getComicDetail(comicId)
-            comicReadViewModel.getComicPicList(
-                comicId,
-                localSettingManager.localSettingState.value.shunt,
-                onSuccess
+            comicReadViewModel.loadRemoteComicChapter(
+                comicId = comicId,
+                shunt = localSettingManager.localSettingState.value.shunt,
+                restoreReadingMemory = readingMemoryEnabled,
+                onSuccess = onSuccess,
             )
         }
     }
 
     // 退出阅读时保存当前页数进度
-    DisposableEffect(comicId, size) {
+    val latestPageIndex by rememberUpdatedState(currentIndexState)
+    val latestPageCount by rememberUpdatedState(size)
+    val latestHistoryComicId by rememberUpdatedState(readHistoryComicId)
+    val latestReadingMemoryEnabled by rememberUpdatedState(localSetting.comicReadingMemoryEnabled)
+    DisposableEffect(comicId) {
         onDispose {
-            if (size > 0 && readHistoryComicId > 0) {
+            if (latestReadingMemoryEnabled && latestPageCount > 0 && latestHistoryComicId > 0) {
                 readHistoryManager.saveReadProgress(
-                    readHistoryComicId,
+                    latestHistoryComicId,
                     comicId,
-                    currentIndexState,
-                    size
+                    latestPageIndex,
+                    latestPageCount
                 )
             }
         }
@@ -260,6 +291,7 @@ fun ComicReadScreen(
                     pagerState = pagerState,
                     targetIndex = targetIndex,
                     zoomState = zoomState,
+                    comicReadViewModel = comicReadViewModel,
                     onUpdateSliderValue = { updateIndexFromReader(it) }
                 )
             } else {
@@ -268,6 +300,7 @@ fun ComicReadScreen(
                     pagerState = pagerState,
                     targetIndex = targetIndex,
                     zoomState = zoomState,
+                    comicReadViewModel = comicReadViewModel,
                     tapOnly = localSetting.readMode == "tap",
                     onUpdateSliderValue = { updateIndexFromReader(it) }
                 )
@@ -325,7 +358,7 @@ fun ComicReadScreen(
                         if (readableChapters.isNotEmpty()) {
                             activeDialog = ReadPanelDialog.Chapter
                         }
-                    }
+                    },
                 )
             }
             AnimatedVisibility(

@@ -39,9 +39,26 @@ fun checkComicCacheIntegrity(
             ?.let { setDownloadTreeUri(context, it.toString()) }
     }
     // The cover belongs to the comic root while pages live in chapter folders.
-    // Deriving the root from a page directory made every multi-chapter cache look
-    // as if its root config.json was missing.
-    val rootPath = getComicDownloadRootPath(context, completed.first())
+    // Prefer the persisted paths first: old versions used several directory
+    // naming schemes, so reconstructing a root from the current title can point
+    // at a newly-created empty folder and falsely report missing metadata.
+    val persistedRoots = completed.asSequence()
+        .flatMap { sequenceOf(it.coverPath, it.zipPath) }
+        .filter(String::isNotBlank)
+        .mapNotNull(::getCacheParentPath)
+        .distinct()
+        .toList()
+    val fallbackRoot = getComicDownloadRootPath(context, completed.first())
+    val rootCandidates = (persistedRoots + fallbackRoot).distinct()
+    val rootPath = rootCandidates.firstOrNull { candidate ->
+        val config = findCacheChildPath(context, candidate, "config.json")
+        val cover = findCacheChildPath(context, candidate, "cover.webp")
+        config != null && cover != null &&
+            cachePathHasContent(context, config) && cachePathHasContent(context, cover)
+    } ?: rootCandidates.firstOrNull { candidate ->
+        findCacheChildPath(context, candidate, "config.json") != null ||
+            findCacheChildPath(context, candidate, "cover.webp") != null
+    } ?: fallbackRoot
 
     val configPath = findCacheChildPath(context, rootPath, "config.json")
     val coverPath = findCacheChildPath(context, rootPath, "cover.webp")

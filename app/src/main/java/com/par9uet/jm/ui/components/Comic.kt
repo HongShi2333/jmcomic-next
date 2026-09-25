@@ -12,6 +12,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -20,6 +22,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.par9uet.jm.data.models.Comic
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
@@ -35,11 +38,13 @@ fun Comic(
     selected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     onToggleSelected: (() -> Unit)? = null,
-    comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel()
+    comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
+    localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val mainNavController = LocalMainNavController.current
     val clipboardManager = LocalClipboardManager.current
     val toastManager: ToastManager = getKoin().get()
+    val localSetting by localSettingManager.localSettingState.collectAsState()
 
     Card(
         modifier = modifier.combinedClickable(
@@ -93,7 +98,11 @@ fun Comic(
                 modifier = Modifier
                     .padding(horizontal = 8.dp)
                     .padding(bottom = 8.dp),
-                text = comic.authorList.joinToString(",").ifBlank { "暂无作者" },
+                text = if (localSetting.showComicIdAsSubtitle) {
+                    "JM${comic.id}"
+                } else {
+                    comic.authorList.joinToString(",").ifBlank { "暂无作者" }
+                },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
                 lineHeight = 12.sp,

@@ -10,7 +10,10 @@ import io.github.jukomu.jmcomic.core.client.impl.JmApiClient
 import io.github.jukomu.jmcomic.core.config.JmConfiguration
 import io.github.jukomu.jmcomic.core.net.OkHttpBuilder
 import okhttp3.Cookie
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import java.time.Duration
+import java.util.concurrent.TimeUnit
 
 /**
  * 共享内置 API 客户端管理器。
@@ -55,10 +58,10 @@ class EmbeddedClientManager(
         val legacyAndroid = Build.VERSION.SDK_INT <= Build.VERSION_CODES.M
         val configBuilder = JmConfiguration.Builder()
             .clientType(ClientType.API)
-            .timeout(Duration.ofSeconds(20))
+            .timeout(Duration.ofSeconds(12))
             .imageTimeout(Duration.ofSeconds(60))
             .downloadThreadPoolSize(2)
-            .domainProbeTimeoutMs(3000)
+            .domainProbeTimeoutMs(1500)
         if (legacyAndroid) {
             // Android 6 lacks the platform Java 9/CompletableFuture surface used
             // by the library's dynamic domain bootstrap. Desugaring still lets
@@ -70,6 +73,13 @@ class EmbeddedClientManager(
         val domainManager = context.domainManager
         val clientWithCookieInjection = context.client.newBuilder()
             .dns(dohManager)
+            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+            .dispatcher(Dispatcher().apply {
+                // 收藏详情标签按批并发请求；将同主机上限与批量规模对齐，
+                // 避免默认 5 个连接把并发请求额外排队。
+                maxRequests = 16
+                maxRequestsPerHost = 8
+            })
             .applyTlsCompat()
             .addInterceptor { chain ->
                 val cookies = cookieStorage.get()

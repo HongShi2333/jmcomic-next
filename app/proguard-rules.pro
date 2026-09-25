@@ -63,6 +63,7 @@
 -keep class com.par9uet.jm.JmApplication { *; }
 -dontwarn org.koin.**
 
+
 # JMComic-Api-Java: keep AndroidImageProcessor and SPI service files so
 # ServiceLoader can discover the Android-compatible ImageProcessor at runtime
 # instead of falling back to AwtImageProcessor (which uses java.awt unavailable on Android).
@@ -92,3 +93,4 @@
 -dontwarn j$.**
 -keep class java.time.** { *; }
 -dontwarn java.time.**
+

@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,7 +58,9 @@ import com.par9uet.jm.ui.components.TabSkeleton
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.state.rememberTabIndexState
 import com.par9uet.jm.ui.viewModel.ComicViewModel
+import com.par9uet.jm.ui.viewModel.UserViewModel
 import com.par9uet.jm.utils.filterBlockedTags
+import coil.ImageLoader
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 import kotlin.math.abs
@@ -129,6 +132,7 @@ private fun HomeSkeleton(
 @Composable
 fun HomeScreen(
     comicViewModel: ComicViewModel = koinActivityViewModel(),
+    userViewModel: UserViewModel = koinActivityViewModel(),
     userManager: UserManager = getKoin().get(),
     localSettingManager: LocalSettingManager = getKoin().get()
 ) {
@@ -136,6 +140,8 @@ fun HomeScreen(
     val homeComicState by comicViewModel.homeComicState.collectAsState()
     val isLogin by userManager.isLoginState.collectAsState(false)
     val localSetting by localSettingManager.localSettingState.collectAsState()
+    val context = LocalContext.current
+    val imageLoader: ImageLoader = getKoin().get()
     val onSearch = { mainNavController.navigate("comicSearch") }
     val onDownload = { mainNavController.navigate("download") }
     val onRecommend = { mainNavController.navigate("comicRecommend") }
@@ -150,6 +156,13 @@ fun HomeScreen(
 
     LaunchedEffect(localSetting.comicApiSource) {
         comicViewModel.getHomeComic()
+    }
+
+    // 首页内容首屏完成后再启动收藏预热；收藏页直接打开时会由收藏页自身触发同一流程。
+    LaunchedEffect(homeComicState.isLoading, isLogin, localSetting.comicApiSource) {
+        if (!homeComicState.isLoading && homeComicState.list.isNotEmpty() && isLogin) {
+            userViewModel.preloadFavoritesAfterHome(context, imageLoader)
+        }
     }
 
     if (homeComicState.list.isEmpty() && homeComicState.isLoading) {
@@ -213,7 +226,7 @@ fun HomeScreen(
                                 }
                             }
                         }
-                    },
+                },
                 state = gridState,
                 columns = adaptiveComicGridCells(localSetting.homeGridColumns),
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Top),

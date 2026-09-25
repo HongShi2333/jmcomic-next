@@ -2,6 +2,7 @@ package com.par9uet.jm.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.material.icons.Icons
@@ -14,6 +15,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
@@ -69,29 +72,35 @@ fun UserHistoryCommentScreen(
             )
         }
     ) { innerPadding ->
-        if (historyCommentLazyPagingItems.loadState.refresh is LoadState.Loading && historyCommentLazyPagingItems.itemCount == 0) {
-            Column(
-                modifier = Modifier.padding(innerPadding)
-            ) {
-                UserHistoryCommentSkeleton()
-            }
-            return@Scaffold
-        }
-        PullRefreshAndLoadMoreGrid(
-            modifier = Modifier.padding(innerPadding),
-            lazyPagingItems = historyCommentLazyPagingItems,
-            key = { "${it.comicId}:${it.sourceChapterId}:${it.id}:${it.time}:${it.content.hashCode()}" },
-            columns = GridCells.Fixed(1)
+        PullToRefreshBox(
+            isRefreshing = historyCommentLazyPagingItems.loadState.refresh is LoadState.Loading,
+            state = rememberPullToRefreshState(),
+            onRefresh = historyCommentLazyPagingItems::refresh,
+            modifier = Modifier
+                .padding(innerPadding)
+                .fillMaxSize(),
         ) {
-            Comment(
-                comment = it,
-                showSource = true,
-                onClick = if (it.comicId > 0) {
-                    { navController.navigate("comicDetail/${it.comicId}") }
-                } else {
-                    null
+            if (historyCommentLazyPagingItems.loadState.refresh is LoadState.Loading && historyCommentLazyPagingItems.itemCount == 0) {
+                UserHistoryCommentSkeleton()
+            } else {
+                PullRefreshAndLoadMoreGrid(
+                    modifier = Modifier.fillMaxSize(),
+                    lazyPagingItems = historyCommentLazyPagingItems,
+                    key = { "${it.comicId}:${it.sourceChapterId}:${it.id}:${it.time}:${it.content.hashCode()}" },
+                    columns = GridCells.Fixed(1),
+                    enablePullRefresh = false,
+                ) {
+                    Comment(
+                        comment = it,
+                        showSource = true,
+                        onClick = if (it.comicId > 0) {
+                            { navController.navigate("comicDetail/${it.comicId}") }
+                        } else {
+                            null
+                        }
+                    )
                 }
-            )
+            }
         }
     }
 }

@@ -72,6 +72,9 @@ fun AppLockSettingScreen(
     val hasPattern by remember(localSetting) {
         derivedStateOf { localSetting.appLockPattern.isNotEmpty() }
     }
+    val hasDuressPassword = localSetting.appLockDuressPassword.isNotEmpty()
+    val hasDuressPattern = localSetting.appLockDuressPattern.isNotEmpty()
+    val hasDuressMethod = hasDuressPassword || hasDuressPattern
     val hasBiometric = localSetting.appLockFingerprintEnabled || localSetting.appLockFaceEnabled
     val hasAnyMethod by remember(hasPassword, hasPattern, hasBiometric) {
         derivedStateOf { hasPassword || hasPattern || hasBiometric }
@@ -95,6 +98,8 @@ fun AppLockSettingScreen(
     var showPasswordLengthDialog by remember { mutableStateOf(false) }
     var showSetPasswordDialog by remember { mutableStateOf(false) }
     var showSetPatternDialog by remember { mutableStateOf(false) }
+    var showSetDuressPasswordDialog by remember { mutableStateOf(false) }
+    var showSetDuressPatternDialog by remember { mutableStateOf(false) }
     // 设置密码时的临时长度（仅在选择完长度后弹出输入框时使用）
     var pendingPasswordLength by remember { mutableStateOf(localSetting.appLockPasswordLength) }
 
@@ -274,6 +279,67 @@ fun AppLockSettingScreen(
                 }
             }
 
+            item {
+                SettingsSection(title = "胁迫密码") {
+                    Text(
+                        text = "输入胁迫凭据后进入电子木鱼页面，当前进程内不会返回主应用。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.Key,
+                        title = "胁迫数字密码",
+                        value = hasDuressPassword,
+                        enabled = hasPassword,
+                        valueText = when {
+                            !hasPassword -> "请先设置应用锁密码"
+                            hasDuressPassword -> "已设置，与应用锁密码同为 ${localSetting.appLockPasswordLength} 位"
+                            else -> "未设置"
+                        },
+                        onCheckedChange = { enabled ->
+                            if (enabled) {
+                                showSetDuressPasswordDialog = true
+                            } else {
+                                localSettingManager.updateAppLockDuressPassword("")
+                            }
+                        },
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.Gesture,
+                        title = "胁迫图案",
+                        value = hasDuressPattern,
+                        enabled = hasPattern,
+                        valueText = when {
+                            !hasPattern -> "请先设置应用锁图案"
+                            hasDuressPattern -> "已设置"
+                            else -> "未设置"
+                        },
+                        onCheckedChange = { enabled ->
+                            if (enabled) {
+                                showSetDuressPatternDialog = true
+                            } else {
+                                localSettingManager.updateAppLockDuressPattern("")
+                            }
+                        },
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.Lock,
+                        title = "启用胁迫密码",
+                        value = localSetting.appLockDuressEnabled,
+                        enabled = hasDuressMethod,
+                        valueText = when {
+                            !hasDuressMethod -> "请先设置胁迫密码或胁迫图案"
+                            localSetting.appLockDuressEnabled -> "已启用"
+                            else -> "未启用"
+                        },
+                        onCheckedChange = { enabled ->
+                            localSettingManager.updateAppLockDuressEnabled(enabled)
+                        },
+                    )
+                }
+            }
+
             // Section 3: 启用应用锁
             item {
                 SettingsSection(title = "启用") {
@@ -348,6 +414,49 @@ fun AppLockSettingScreen(
                 },
                 onDismiss = {
                     showSetPatternDialog = false
+                }
+            )
+        }
+
+        if (showSetDuressPasswordDialog) {
+            SetAppLockPasswordDialog(
+                lockType = APP_LOCK_TYPE_PASSWORD,
+                passwordLength = localSetting.appLockPasswordLength,
+                validate = { password ->
+                    if (password == localSetting.appLockPassword) {
+                        "胁迫密码不能与应用锁密码相同"
+                    } else if (password.length != localSetting.appLockPasswordLength) {
+                        "胁迫密码必须为 ${localSetting.appLockPasswordLength} 位"
+                    } else {
+                        null
+                    }
+                },
+                onConfirm = { password ->
+                    localSettingManager.updateAppLockDuressPassword(password)
+                    showSetDuressPasswordDialog = false
+                },
+                onDismiss = {
+                    showSetDuressPasswordDialog = false
+                }
+            )
+        }
+
+        if (showSetDuressPatternDialog) {
+            SetAppLockPasswordDialog(
+                lockType = APP_LOCK_TYPE_PATTERN,
+                validate = { pattern ->
+                    if (pattern == localSetting.appLockPattern) {
+                        "胁迫图案不能与应用锁图案相同"
+                    } else {
+                        null
+                    }
+                },
+                onConfirm = { pattern ->
+                    localSettingManager.updateAppLockDuressPattern(pattern)
+                    showSetDuressPatternDialog = false
+                },
+                onDismiss = {
+                    showSetDuressPatternDialog = false
                 }
             )
         }

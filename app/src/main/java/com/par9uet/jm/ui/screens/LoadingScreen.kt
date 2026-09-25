@@ -18,6 +18,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -95,7 +96,10 @@ private val LOADING_TIPS = listOf(
  * 用于应用启动初始化阶段及引导完成后的过渡展示。
  */
 @Composable
-fun LoadingScreen() {
+fun LoadingScreen(
+    showSkipButton: Boolean = false,
+    onSkip: () -> Unit = {}
+) {
     // 初始 tip 随机选取，之后每 3 秒随机切换到不同的 tip（不重复上一个）
     var tipIndex by remember {
         mutableIntStateOf(Random.nextInt(LOADING_TIPS.size))
@@ -155,7 +159,15 @@ fun LoadingScreen() {
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                Spacer(modifier = Modifier.height(32.dp))
+                if (showSkipButton) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(onClick = onSkip) {
+                        Text("跳过")
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                } else {
+                    Spacer(modifier = Modifier.height(32.dp))
+                }
 
                 // 进度条（indeterminate 模式）
                 LinearProgressIndicator(

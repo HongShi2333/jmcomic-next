@@ -203,7 +203,35 @@ class ComicReadViewModel(
         }
     }
 
-    fun getLocalComicPicList(comicId: Int, context: Context, onSuccess: (() -> Unit)? = null) {
+    /**
+     * Start metadata and page-list requests together, but calculate recovery from
+     * the persisted chapter key before either response can overwrite reader state.
+     */
+    fun loadRemoteComicChapter(
+        comicId: Int,
+        shunt: String,
+        restoreReadingMemory: Boolean,
+        onSuccess: (savedPageIndex: Int) -> Unit,
+    ) {
+        val historyComicKey = readHistoryManager.historyKeyForChapter(comicId)
+        val savedPageIndex = if (restoreReadingMemory) {
+            readHistoryManager.lastReadPageIndex(historyComicKey, comicId)
+        } else {
+            0
+        }
+        readHistoryComicId.intValue = historyComicKey
+        getComicDetail(comicId)
+        getComicPicList(comicId, shunt) {
+            onSuccess(savedPageIndex)
+        }
+    }
+
+    fun getLocalComicPicList(
+        comicId: Int,
+        context: Context,
+        restoreReadingMemory: Boolean,
+        onSuccess: ((savedPageIndex: Int) -> Unit)? = null,
+    ) {
         viewModelScope.launch {
             _comicPicState.update {
                 it.copy(
@@ -215,6 +243,11 @@ class ComicReadViewModel(
             prefetchSet.clear()
             val downloadComic = downloadComicDao.getById(comicId)
             val groupId = downloadComic?.groupId?.takeIf { it != 0 } ?: comicId
+            val savedPageIndex = if (restoreReadingMemory) {
+                readHistoryManager.lastReadPageIndex(groupId, comicId)
+            } else {
+                0
+            }
             readHistoryComicId.intValue = readHistoryManager.markRead(groupId, comicId)
             loadLocalChapterList(comicId, downloadComic)
             val storedPath = downloadComic?.zipPath.orEmpty()
@@ -278,7 +311,7 @@ class ComicReadViewModel(
                     isLoading = false
                 )
             }
-            onSuccess?.invoke()
+            onSuccess?.invoke(savedPageIndex)
         }
     }
 

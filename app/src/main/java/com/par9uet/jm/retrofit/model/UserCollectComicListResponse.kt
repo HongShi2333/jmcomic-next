@@ -1,5 +1,6 @@
 package com.par9uet.jm.retrofit.model
 
+import com.google.gson.annotations.SerializedName
 import com.par9uet.jm.data.models.Comic
 
 data class UserCollectComicListResponse(
@@ -17,6 +18,15 @@ data class UserCollectComicListResponse(
         val category: Category,
         val category_sub: Category,
         val tags: List<String>? = null,
+        @SerializedName(value = "actors", alternate = ["actor", "roles", "role"])
+        val actors: List<String>? = null,
+        @SerializedName(value = "works", alternate = ["work"])
+        val works: List<String>? = null,
+        @SerializedName(
+            value = "hidden_tags",
+            alternate = ["hiddenTags", "tags_hidden", "tagsHide", "tags_hide", "hidden_tag"]
+        )
+        val hidden_tags: List<String>? = null,
     ) {
         data class Category(
             val id: String?,
@@ -34,16 +44,15 @@ data class UserCollectComicListResponse(
                 readCount = 0,
                 likeCount = 0,
                 commentCount = 0,
-                tagList = if (!it.tags.isNullOrEmpty()) {
-                    it.tags.filter { t -> t.isNotBlank() }.distinct()
-                } else {
-                    listOfNotNull(
-                        it.category.title,
-                        it.category_sub.title
-                    ).filter { title -> title.isNotBlank() }.distinct()
-                },
-                roleList = listOf(),
-                workList = listOf(),
+                tagList = listOfNotNull(it.tags, it.hidden_tags)
+                    .flatten()
+                    .filter { t -> t.isNotBlank() }
+                    .distinct(),
+                roleList = it.actors.orEmpty().filter { actor -> actor.isNotBlank() }.distinct(),
+                workList = it.works.orEmpty().filter { work -> work.isNotBlank() }.distinct(),
+                typeList = listOfNotNull(it.category.title, it.category_sub.title)
+                    .filter { title -> title.isNotBlank() }
+                    .distinct(),
                 isLike = false,
                 isCollect = false,
                 relateComicList = listOf(),

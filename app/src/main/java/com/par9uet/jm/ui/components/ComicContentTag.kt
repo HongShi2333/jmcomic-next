@@ -1,5 +1,6 @@
 package com.par9uet.jm.ui.components
 
+import android.net.Uri
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Text
@@ -16,7 +17,7 @@ fun ComicContentTag(label: String) {
             containerColor = ExtendedTheme.colors.contentTag.colorContainer
         ),
         onClick = {
-            mainNavController.navigate("comicSearchResult/$label")
+            mainNavController.navigate("comicSearchResult/${Uri.encode(label)}")
         },
         label = {
             Text(

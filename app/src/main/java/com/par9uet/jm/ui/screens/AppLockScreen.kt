@@ -91,7 +91,11 @@ fun AppLockScreen(
     faceEnabled: Boolean,
     unlockRule: String,
     requiredMethods: List<String>,
-    onUnlock: () -> Unit
+    onUnlock: () -> Unit,
+    duressEnabled: Boolean = false,
+    duressPassword: String = "",
+    duressPattern: String = "",
+    onDuress: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
@@ -113,19 +117,28 @@ fun AppLockScreen(
             }
         } else enabledMethods
     }
-    val completedMethods = remember { mutableStateListOf<String>() }
+    val activeDuressPassword = duressPassword.takeIf { duressEnabled && it.isNotBlank() }
+    val activeDuressPattern = duressPattern.takeIf { duressEnabled && it.isNotBlank() }
+    val completedMethods = remember(methodsToPass) { mutableStateListOf<String>() }
+    var duressDetected by remember(methodsToPass) { mutableStateOf(false) }
     var selectedMethod by remember(methodsToPass) {
         mutableStateOf(methodsToPass.firstOrNull { it != APP_LOCK_METHOD_BIOMETRIC } ?: APP_LOCK_METHOD_BIOMETRIC)
     }
 
-    fun completeMethod(method: String) {
+    fun completeMethod(method: String, isDuress: Boolean = false) {
+        val shouldEnterDuress = duressDetected || isDuress
+        if (isDuress) duressDetected = true
         if (unlockRule != APP_LOCK_RULE_REQUIRED) {
-            onUnlock()
+            if (shouldEnterDuress) onDuress() else onUnlock()
             return
         }
         if (method !in completedMethods) completedMethods += method
         val remaining = methodsToPass.filter { it !in completedMethods }
-        if (remaining.isEmpty()) onUnlock() else selectedMethod = remaining.first()
+        if (remaining.isEmpty()) {
+            if (shouldEnterDuress) onDuress() else onUnlock()
+        } else {
+            selectedMethod = remaining.first()
+        }
     }
 
     Surface(
@@ -188,7 +201,7 @@ fun AppLockScreen(
                                     faceEnabled -> "面容"
                                     else -> "指纹"
                                 }}",
-                                onSuccess = { completeMethod(APP_LOCK_METHOD_BIOMETRIC) },
+                        onSuccess = { completeMethod(APP_LOCK_METHOD_BIOMETRIC) },
                             )
                         }
                     ) {
@@ -225,14 +238,28 @@ fun AppLockScreen(
                     PatternLockInput(
                         title = "请绘制图案",
                         correctPassword = correctPattern,
-                        onUnlock = { completeMethod(APP_LOCK_TYPE_PATTERN) }
+                        additionalCorrectPasswords = activeDuressPattern?.let { setOf(it) } ?: emptySet(),
+                        onUnlock = {},
+                        onVerified = { entered ->
+                            completeMethod(
+                                APP_LOCK_TYPE_PATTERN,
+                                isDuress = entered == activeDuressPattern
+                            )
+                        }
                     )
                 } else if (activeInputMethod == APP_LOCK_TYPE_PASSWORD) {
                     PasswordLockInput(
                         title = "请输入密码",
                         correctPassword = correctPassword,
                         passwordLength = passwordLength,
-                        onUnlock = { completeMethod(APP_LOCK_TYPE_PASSWORD) }
+                        additionalCorrectPasswords = activeDuressPassword?.let { setOf(it) } ?: emptySet(),
+                        onUnlock = {},
+                        onVerified = { entered ->
+                            completeMethod(
+                                APP_LOCK_TYPE_PASSWORD,
+                                isDuress = entered == activeDuressPassword
+                            )
+                        }
                     )
                 }
             }
@@ -250,7 +277,9 @@ fun PasswordLockInput(
     onUnlock: () -> Unit,
     onInputComplete: ((String) -> Unit)? = null,
     passwordLength: Int = 4,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    additionalCorrectPasswords: Set<String> = emptySet(),
+    onVerified: ((String) -> Unit)? = null
 ) {
     val len = passwordLength.coerceIn(4, 8)
     val scope = rememberCoroutineScope()
@@ -281,8 +310,8 @@ fun PasswordLockInput(
             if (onInputComplete != null) {
                 onInputComplete(pwd)
                 digits.clear()
-            } else if (pwd == correctPassword) {
-                onUnlock()
+            } else if (pwd == correctPassword || pwd in additionalCorrectPasswords) {
+                if (onVerified != null) onVerified(pwd) else onUnlock()
             } else {
                 isError = true
                 triggerShake()
@@ -428,7 +457,9 @@ fun PatternLockInput(
     correctPassword: String?,
     onUnlock: () -> Unit,
     onInputComplete: ((String) -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    additionalCorrectPasswords: Set<String> = emptySet(),
+    onVerified: ((String) -> Unit)? = null
 ) {
     val selectedDots = remember { mutableStateListOf<Int>() }
     var currentTouch by remember { mutableStateOf<Offset?>(null) }
@@ -471,8 +502,8 @@ fun PatternLockInput(
         if (onInputComplete != null) {
             onInputComplete(pattern)
             selectedDots.clear()
-        } else if (pattern == correctPassword) {
-            onUnlock()
+        } else if (pattern == correctPassword || pattern in additionalCorrectPasswords) {
+            if (onVerified != null) onVerified(pattern) else onUnlock()
         } else {
             isError = true
             triggerShake()
@@ -612,7 +643,8 @@ fun SetAppLockPasswordDialog(
     lockType: String,
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
-    passwordLength: Int = 4
+    passwordLength: Int = 4,
+    validate: (String) -> String? = { null }
 ) {
     var firstInput by remember { mutableStateOf<String?>(null) }
     var secondInput by remember { mutableStateOf<String?>(null) }
@@ -665,7 +697,14 @@ fun SetAppLockPasswordDialog(
                             } else {
                                 secondInput = pattern
                                 if (secondInput == firstInput) {
-                                    onConfirm(pattern)
+                                    val validationError = validate(pattern)
+                                    if (validationError == null) {
+                                        onConfirm(pattern)
+                                    } else {
+                                        error = validationError
+                                        firstInput = null
+                                        secondInput = null
+                                    }
                                 } else {
                                     error = "两次输入不一致，请重新设置"
                                     firstInput = null
@@ -687,7 +726,14 @@ fun SetAppLockPasswordDialog(
                             } else {
                                 secondInput = pwd
                                 if (secondInput == firstInput) {
-                                    onConfirm(pwd)
+                                    val validationError = validate(pwd)
+                                    if (validationError == null) {
+                                        onConfirm(pwd)
+                                    } else {
+                                        error = validationError
+                                        firstInput = null
+                                        secondInput = null
+                                    }
                                 } else {
                                     error = "两次输入不一致，请重新设置"
                                     firstInput = null

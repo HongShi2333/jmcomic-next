@@ -1,6 +1,7 @@
 package com.par9uet.jm
 
 import android.Manifest
+import android.view.KeyEvent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
@@ -13,8 +14,14 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.unit.Dp
 import com.par9uet.jm.ui.theme.AppTheme
+import com.par9uet.jm.utils.VolumeKeyPageTurnDispatcher
 
 class MainActivity : FragmentActivity() {
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (VolumeKeyPageTurnDispatcher.handle(event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 

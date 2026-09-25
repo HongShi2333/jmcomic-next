@@ -62,7 +62,7 @@ val appModule = module {
     single { UserManager(get(), get(), get(), get()) } bind AppInitTask::class
     single { RemoteSettingManager(get()) } bind AppInitTask::class
     single { LocalSettingManager(get(), get()) } bind AppInitTask::class
-    single { DohManager(get()) } bind AppInitTask::class
+    single { DohManager(get(), get()) } bind AppInitTask::class
     single<Dns> { get<DohManager>() }
     single { HistorySearchManager(get()) } bind AppInitTask::class
     single { ReadHistoryManager(get()) } bind AppInitTask::class
@@ -74,6 +74,6 @@ val appModule = module {
     single<Gson> { GsonBuilder().setStrictness(Strictness.LENIENT).serializeNulls().create() }
 
     viewModel { GlobalViewModel(getAll(), get()) }
-    viewModel { AiChatViewModel(get(), get(), get()) }
+    viewModel { AiChatViewModel(get(), get(), get(), get()) }
     viewModel { PersonaViewModel(get()) }
 }

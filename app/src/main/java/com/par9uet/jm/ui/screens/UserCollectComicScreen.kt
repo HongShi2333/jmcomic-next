@@ -26,6 +26,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.DriveFileMove
@@ -67,6 +75,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -81,10 +91,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
+import coil.ImageLoader
 import com.par9uet.jm.data.models.CollectComicOrderFilter
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.ui.components.Comic
@@ -94,6 +106,7 @@ import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.adaptiveDialogMaxHeight
 import com.par9uet.jm.ui.viewModel.UserViewModel
 import com.par9uet.jm.store.LocalSettingManager
+import com.par9uet.jm.store.UserManager
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
@@ -114,7 +127,10 @@ private fun UserCollectComicSkeleton(
         for (i in 0 until 8) {
             key(i) {
                 ComicSkeleton(
-                    modifier = Modifier.weight(1f)
+                    // FlowRow does not expose RowScope.weight on all Compose
+                    // versions used by the project; use an adaptive fraction
+                    // so the two-column skeleton remains tablet friendly.
+                    modifier = Modifier.fillMaxWidth(0.48f)
                 )
             }
         }
@@ -151,17 +167,25 @@ fun UserCollectComicScreen(
     localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val navController = LocalMainNavController.current
+    val context = LocalContext.current
+    val imageLoader: ImageLoader = getKoin().get()
+    val userManager: UserManager = getKoin().get()
     val collectComicLazyPagingItems = userViewModel.collectComicPager.collectAsLazyPagingItems()
+    val isLogin by userManager.isLoginState.collectAsState(false)
     val order by userViewModel.collectComicOrder.collectAsState()
     val collectComicFilter by userViewModel.collectComicFilter.collectAsState()
     val tagCountMap by userViewModel.collectTagCounts.collectAsState()
+    val roleCountMap by userViewModel.collectRoleCounts.collectAsState()
     val authorCountMap by userViewModel.collectAuthorCounts.collectAsState()
+    val typeCountMap by userViewModel.collectTypeCounts.collectAsState()
     val selectedFolderId by userViewModel.selectedFolderId.collectAsState()
     val folderList by userViewModel.folderList.collectAsState()
     val collectEditState by userViewModel.collectEditState.collectAsState()
     val localSetting by localSettingManager.localSettingState.collectAsState()
     var draftSelectedTags by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var draftSelectedRoles by remember { mutableStateOf<Set<String>>(emptySet()) }
     var draftSelectedAuthors by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var draftSelectedTypes by remember { mutableStateOf<Set<String>>(emptySet()) }
     var draftTagLogic by remember { mutableStateOf(TagFilterLogic.AND) }
     var showFilterDialog by remember { mutableStateOf(false) }
 
@@ -175,6 +199,20 @@ fun UserCollectComicScreen(
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
     var showMoveFolderDialog by remember { mutableStateOf(false) }
     var showDeleteCollectConfirmDialog by remember { mutableStateOf(false) }
+    var toolbarVisible by remember { mutableStateOf(true) }
+    val toolbarScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                if (kotlin.math.abs(available.y) >= 6f) {
+                    val nextVisible = available.y > 0f
+                    if (toolbarVisible != nextVisible) {
+                        toolbarVisible = nextVisible
+                    }
+                }
+                return androidx.compose.ui.geometry.Offset.Zero
+            }
+        }
+    }
 
     val folders = remember(folderList) {
         val result = linkedMapOf<String, String>()
@@ -188,199 +226,231 @@ fun UserCollectComicScreen(
     }
 
     // 当前激活的筛选项数量，用于在筛选按钮上展示
-    val activeFilterCount = collectComicFilter.selectedTags.size + collectComicFilter.selectedAuthors.size
+    val activeFilterCount = collectComicFilter.selectedTags.size +
+        collectComicFilter.selectedRoles.size +
+        collectComicFilter.selectedAuthors.size +
+        collectComicFilter.selectedTypes.size
+    val collectPullRefreshState = rememberPullToRefreshState()
+    val isCollectRefreshing = collectComicLazyPagingItems.loadState.refresh is LoadState.Loading
 
-    LaunchedEffect(Unit) {
-        userViewModel.refreshCollectTagCounts()
-        userViewModel.refreshFolderList()
+    LaunchedEffect(isLogin) {
+        if (isLogin) {
+            userViewModel.preloadFavoritesAfterHome(context, imageLoader)
+        }
     }
 
     // 主体内容：搜索栏 + 收藏夹 Chip + 排序 + 漫画网格
     val mainContent: @Composable () -> Unit = {
-        Column(
-            modifier = Modifier.fillMaxSize()
+        PullToRefreshBox(
+            isRefreshing = isCollectRefreshing,
+            state = collectPullRefreshState,
+            onRefresh = userViewModel::refreshCollectContent,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                tonalElevation = 0.dp,
-            ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-            // 顶部搜索栏 + 筛选按钮
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(50.dp),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Column(modifier = Modifier.fillMaxSize()) {
+                    AnimatedVisibility(
+                        visible = toolbarVisible,
+                        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                        BasicTextField(
-                            value = collectComicFilter.searchText,
-                            onValueChange = { userViewModel.updateCollectSearchText(it) },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onSurface,
-                            ),
-                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                            decorationBox = { innerTextField ->
-                                if (collectComicFilter.searchText.isEmpty()) {
-                                    Text(
-                                        "搜索漫画名 / 作者 / 标签",
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                                innerTextField()
-                            },
-                        )
-                        if (collectComicFilter.searchText.isNotEmpty()) {
-                            IconButton(onClick = { userViewModel.updateCollectSearchText("") }) {
-                                Icon(Icons.Rounded.Close, contentDescription = "清除")
-                            }
-                        }
-                    }
-                }
-                FilledTonalIconButton(
-                    onClick = {
-                        draftSelectedTags = collectComicFilter.selectedTags
-                        draftSelectedAuthors = collectComicFilter.selectedAuthors
-                        draftTagLogic = collectComicFilter.tagLogic
-                        showFilterDialog = true
-                    },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    BadgedBox(
-                        badge = {
-                            if (activeFilterCount > 0) Badge { Text(activeFilterCount.toString()) }
-                        }
-                    ) {
-                        Icon(
-                            Icons.Rounded.FilterList,
-                            contentDescription = "筛选",
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                }
-            }
-
-            // 收藏夹切换栏
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                folders.forEach { (folderId, folderName) ->
-                    key(folderId) {
-                        FolderChip(
-                            folderName = folderName,
-                            isSelected = selectedFolderId == folderId.toIntOrNull(),
-                            isAll = folderId == "0",
-                            onClick = {
-                                userViewModel.changeFolder(folderId.toIntOrNull() ?: 0)
-                            }
-                        )
-                    }
-                }
-                FilledTonalIconButton(onClick = {
-                    newFolderName = ""
-                    showCreateFolderDialog = true
-                }, modifier = Modifier.size(40.dp)) {
-                    Icon(Icons.Rounded.Add, contentDescription = "新建收藏夹", modifier = Modifier.size(20.dp))
-                }
-                FilledTonalIconButton(
-                    onClick = { showFolderManageSheet = true },
-                    modifier = Modifier.size(40.dp),
-                ) {
-                    Icon(Icons.Rounded.Folder, contentDescription = "管理收藏夹", modifier = Modifier.size(20.dp))
-                }
-            }
-                }
-            }
-
-            // 排序：Material 3 单选 SegmentedButton
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "排序",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
-                    CollectComicOrderFilter.entries.forEachIndexed { index, item ->
-                        SegmentedButton(
-                            selected = item == order,
-                            onClick = { userViewModel.changeCollectComicOrder(item) },
-                            shape = SegmentedButtonDefaults.itemShape(
-                                index,
-                                CollectComicOrderFilter.entries.size
-                            )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            tonalElevation = 0.dp,
                         ) {
-                            Text(item.label)
+                            Column(
+                                modifier = Modifier.padding(vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                            // 顶部搜索栏 + 筛选按钮
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(50.dp),
+                                    shape = MaterialTheme.shapes.large,
+                                    color = MaterialTheme.colorScheme.surface,
+                                    contentColor = MaterialTheme.colorScheme.onSurface,
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Search,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                        BasicTextField(
+                                            value = collectComicFilter.searchText,
+                                            onValueChange = { userViewModel.updateCollectSearchText(it) },
+                                            modifier = Modifier.weight(1f),
+                                            singleLine = true,
+                                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            ),
+                                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                            decorationBox = { innerTextField ->
+                                                if (collectComicFilter.searchText.isEmpty()) {
+                                                    Text(
+                                                        "搜索漫画名 / 作者 / 标签",
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                                innerTextField()
+                                            },
+                                        )
+                                        if (collectComicFilter.searchText.isNotEmpty()) {
+                                            IconButton(onClick = { userViewModel.updateCollectSearchText("") }) {
+                                                Icon(Icons.Rounded.Close, contentDescription = "清除")
+                                            }
+                                        }
+                                    }
+                                }
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        draftSelectedTags = collectComicFilter.selectedTags
+                                        draftSelectedRoles = collectComicFilter.selectedRoles
+                                        draftSelectedAuthors = collectComicFilter.selectedAuthors
+                                        draftSelectedTypes = collectComicFilter.selectedTypes
+                                        draftTagLogic = collectComicFilter.tagLogic
+                                        if (tagCountMap.isEmpty() && roleCountMap.isEmpty() && authorCountMap.isEmpty() && typeCountMap.isEmpty()) {
+                                            userViewModel.refreshCollectTagCounts()
+                                        }
+                                        showFilterDialog = true
+                                    },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    BadgedBox(
+                                        badge = {
+                                            if (activeFilterCount > 0) Badge { Text(activeFilterCount.toString()) }
+                                        }
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.FilterList,
+                                            contentDescription = "筛选",
+                                            modifier = Modifier.size(22.dp),
+                                        )
+                                    }
+                                }
+                            }
+                                // 收藏夹切换栏
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp)
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    folders.forEach { (folderId, folderName) ->
+                                        key(folderId) {
+                                            FolderChip(
+                                                folderName = folderName,
+                                                isSelected = selectedFolderId == folderId.toIntOrNull(),
+                                                isAll = folderId == "0",
+                                                onClick = {
+                                                    userViewModel.changeFolder(folderId.toIntOrNull() ?: 0)
+                                                }
+                                            )
+                                        }
+                                    }
+                                    FilledTonalIconButton(onClick = {
+                                        newFolderName = ""
+                                        showCreateFolderDialog = true
+                                    }, modifier = Modifier.size(40.dp)) {
+                                        Icon(Icons.Rounded.Add, contentDescription = "新建收藏夹", modifier = Modifier.size(20.dp))
+                                    }
+                                    FilledTonalIconButton(
+                                        onClick = { showFolderManageSheet = true },
+                                        modifier = Modifier.size(40.dp),
+                                    ) {
+                                        Icon(Icons.Rounded.Folder, contentDescription = "管理收藏夹", modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            }
-
-            HorizontalDivider()
-
-            // 漫画列表：2 列网格，间距更大
-            if (collectComicLazyPagingItems.loadState.refresh is LoadState.Loading && collectComicLazyPagingItems.itemCount == 0) {
-                UserCollectComicSkeleton(
-                    modifier = Modifier.weight(1f)
-                )
-            } else {
-                PullRefreshAndLoadMoreGrid(
-                    modifier = Modifier.weight(1f),
-                    lazyPagingItems = collectComicLazyPagingItems,
-                    key = { it.id },
-                    columns = adaptiveComicGridCells(localSetting.collectGridColumns),
-                    verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.Top),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(14.dp)
-                ) { comic ->
-                    Comic(
-                        comic = comic,
-                        editing = collectEditState.editing,
-                        selected = comic.id in collectEditState.selectedComicIds,
-                        onLongClick = {
-                            if (collectEditState.editing) {
-                                userViewModel.toggleCollectSelected(comic.id)
-                            } else {
-                                userViewModel.enterCollectEdit(comic.id)
+                    // 排序：Material 3 单选 SegmentedButton
+                    AnimatedVisibility(
+                        visible = toolbarVisible,
+                        enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                        exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut(),
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Text(
+                                    text = "排序",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                SingleChoiceSegmentedButtonRow(modifier = Modifier.weight(1f)) {
+                                    CollectComicOrderFilter.entries.forEachIndexed { index, item ->
+                                        SegmentedButton(
+                                            selected = item == order,
+                                            onClick = { userViewModel.changeCollectComicOrder(item) },
+                                            shape = SegmentedButtonDefaults.itemShape(
+                                                index,
+                                                CollectComicOrderFilter.entries.size
+                                            )
+                                        ) {
+                                            Text(item.label)
+                                        }
+                                    }
+                                }
                             }
-                        },
-                        onToggleSelected = {
-                            userViewModel.toggleCollectSelected(comic.id)
+                            HorizontalDivider()
                         }
+                    }
+
+                if (isCollectRefreshing && collectComicLazyPagingItems.itemCount == 0) {
+                    UserCollectComicSkeleton(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
                     )
+                } else {
+                    PullRefreshAndLoadMoreGrid(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .nestedScroll(toolbarScrollConnection),
+                        lazyPagingItems = collectComicLazyPagingItems,
+                        key = { it.id },
+                        columns = adaptiveComicGridCells(localSetting.collectGridColumns),
+                        verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.Top),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(14.dp),
+                        enablePullRefresh = false,
+                    ) { comic ->
+                        Comic(
+                            comic = comic,
+                            editing = collectEditState.editing,
+                            selected = comic.id in collectEditState.selectedComicIds,
+                            onLongClick = {
+                                if (collectEditState.editing) {
+                                    userViewModel.toggleCollectSelected(comic.id)
+                                } else {
+                                    userViewModel.enterCollectEdit(comic.id)
+                                }
+                            },
+                            onToggleSelected = {
+                                userViewModel.toggleCollectSelected(comic.id)
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -424,13 +494,21 @@ fun UserCollectComicScreen(
             },
             bottomBar = { editBar() }
         ) { innerPadding ->
-            Box(modifier = Modifier.padding(innerPadding)) {
+            Box(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+            ) {
                 mainContent()
             }
         }
     } else {
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
                 mainContent()
             }
             editBar()
@@ -440,15 +518,26 @@ fun UserCollectComicScreen(
     if (showFilterDialog) {
         FilterDialog(
             tagCountMap = tagCountMap,
+            roleCountMap = roleCountMap,
             authorCountMap = authorCountMap,
+            typeCountMap = typeCountMap,
             draftSelectedTags = draftSelectedTags,
+            draftSelectedRoles = draftSelectedRoles,
             draftSelectedAuthors = draftSelectedAuthors,
+            draftSelectedTypes = draftSelectedTypes,
             draftTagLogic = draftTagLogic,
             onTagToggle = { tag ->
                 draftSelectedTags = if (tag in draftSelectedTags) {
                     draftSelectedTags - tag
                 } else {
                     draftSelectedTags + tag
+                }
+            },
+            onRoleToggle = { role ->
+                draftSelectedRoles = if (role in draftSelectedRoles) {
+                    draftSelectedRoles - role
+                } else {
+                    draftSelectedRoles + role
                 }
             },
             onAuthorToggle = { author ->
@@ -458,19 +547,32 @@ fun UserCollectComicScreen(
                     draftSelectedAuthors + author
                 }
             },
+            onTypeToggle = { type ->
+                draftSelectedTypes = if (type in draftSelectedTypes) {
+                    draftSelectedTypes - type
+                } else {
+                    draftSelectedTypes + type
+                }
+            },
             onTagLogicChange = { draftTagLogic = it },
             onConfirm = {
                 userViewModel.updateCollectSelectedTags(draftSelectedTags)
+                userViewModel.updateCollectSelectedRoles(draftSelectedRoles)
                 userViewModel.updateCollectSelectedAuthors(draftSelectedAuthors)
+                userViewModel.updateCollectSelectedTypes(draftSelectedTypes)
                 userViewModel.updateCollectTagLogic(draftTagLogic)
                 showFilterDialog = false
             },
             onClear = {
                 draftSelectedTags = emptySet()
+                draftSelectedRoles = emptySet()
                 draftSelectedAuthors = emptySet()
+                draftSelectedTypes = emptySet()
                 draftTagLogic = TagFilterLogic.AND
                 userViewModel.updateCollectSelectedTags(emptySet())
+                userViewModel.updateCollectSelectedRoles(emptySet())
                 userViewModel.updateCollectSelectedAuthors(emptySet())
+                userViewModel.updateCollectSelectedTypes(emptySet())
                 userViewModel.updateCollectTagLogic(TagFilterLogic.AND)
                 showFilterDialog = false
             },
@@ -682,17 +784,23 @@ fun UserCollectComicScreen(
     }
 }
 
-// 筛选弹窗：ModalBottomSheet 支持上划全屏 + 逻辑门选择 + Tab（标签/作者）
+// 筛选弹窗：ModalBottomSheet 支持上划全屏 + 统一逻辑门 + Tab（标签/角色/作者/类型）
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FilterDialog(
     tagCountMap: Map<String, Int>,
+    roleCountMap: Map<String, Int>,
     authorCountMap: Map<String, Int>,
+    typeCountMap: Map<String, Int>,
     draftSelectedTags: Set<String>,
+    draftSelectedRoles: Set<String>,
     draftSelectedAuthors: Set<String>,
+    draftSelectedTypes: Set<String>,
     draftTagLogic: TagFilterLogic,
     onTagToggle: (String) -> Unit,
+    onRoleToggle: (String) -> Unit,
     onAuthorToggle: (String) -> Unit,
+    onTypeToggle: (String) -> Unit,
     onTagLogicChange: (TagFilterLogic) -> Unit,
     onConfirm: () -> Unit,
     onClear: () -> Unit,
@@ -710,9 +818,17 @@ private fun FilterDialog(
         if (query.isBlank()) tagCountMap
         else tagCountMap.filterKeys { it.contains(query, ignoreCase = true) }
     }
+    val filteredRoleCountMap = remember(roleCountMap, query) {
+        if (query.isBlank()) roleCountMap
+        else roleCountMap.filterKeys { it.contains(query, ignoreCase = true) }
+    }
     val filteredAuthorCountMap = remember(authorCountMap, query) {
         if (query.isBlank()) authorCountMap
         else authorCountMap.filterKeys { it.contains(query, ignoreCase = true) }
+    }
+    val filteredTypeCountMap = remember(typeCountMap, query) {
+        if (query.isBlank()) typeCountMap
+        else typeCountMap.filterKeys { it.contains(query, ignoreCase = true) }
     }
 
     ModalBottomSheet(
@@ -734,9 +850,9 @@ private fun FilterDialog(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
-            // 逻辑门选择（仅对标签生效），放在筛选页最上面
+            // 逻辑门选择：对标签、角色、作者、类型的所有选择统一生效
             Text(
-                text = "标签筛选逻辑",
+                text = "筛选逻辑",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 6.dp)
@@ -792,7 +908,7 @@ private fun FilterDialog(
                         decorationBox = { innerTextField ->
                             if (filterQuery.isEmpty()) {
                                 Text(
-                                    if (selectedTabIndex == 0) "搜索标签" else "搜索作者",
+                                    "搜索${listOf("标签", "角色", "作者", "类型").getOrElse(selectedTabIndex) { "筛选项" }}",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
@@ -807,10 +923,12 @@ private fun FilterDialog(
                 }
             }
             Spacer(modifier = Modifier.height(12.dp))
-            // Tab 行
+            Spacer(modifier = Modifier.height(8.dp))
+            // Tab 行：增加底部留白，避免标题与第一行标签贴得太近
             PrimaryTabRow(
                 selectedTabIndex = selectedTabIndex,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.padding(bottom = 12.dp),
             ) {
                 Tab(
                     selected = selectedTabIndex == 0,
@@ -826,7 +944,23 @@ private fun FilterDialog(
                         selectedTabIndex = 1
                         filterQuery = ""
                     },
+                    text = { Text("角色 (${roleCountMap.size})") }
+                )
+                Tab(
+                    selected = selectedTabIndex == 2,
+                    onClick = {
+                        selectedTabIndex = 2
+                        filterQuery = ""
+                    },
                     text = { Text("作者 (${authorCountMap.size})") }
+                )
+                Tab(
+                    selected = selectedTabIndex == 3,
+                    onClick = {
+                        selectedTabIndex = 3
+                        filterQuery = ""
+                    },
+                    text = { Text("类型 (${typeCountMap.size})") }
                 )
             }
             // 内容区：可滚动，填满剩余空间
@@ -862,11 +996,26 @@ private fun FilterDialog(
                             }
                         }
                     }
-                    1 -> {
-                        if (filteredAuthorCountMap.isEmpty()) {
+                    1, 2, 3 -> {
+                        val counts = when (selectedTabIndex) {
+                            1 -> filteredRoleCountMap
+                            2 -> filteredAuthorCountMap
+                            else -> filteredTypeCountMap
+                        }
+                        val selected = when (selectedTabIndex) {
+                            1 -> draftSelectedRoles
+                            2 -> draftSelectedAuthors
+                            else -> draftSelectedTypes
+                        }
+                        val onToggle = when (selectedTabIndex) {
+                            1 -> onRoleToggle
+                            2 -> onAuthorToggle
+                            else -> onTypeToggle
+                        }
+                        if (counts.isEmpty()) {
                             Text(
-                                if (authorCountMap.isEmpty()) "当前已加载收藏中没有可筛选的作者"
-                                else "没有匹配「$query」的作者",
+                                if (counts.isEmpty() && query.isBlank()) "当前已加载收藏中没有可筛选的项目"
+                                else "没有匹配「$query」的项目",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 24.dp)
                             )
@@ -878,11 +1027,11 @@ private fun FilterDialog(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                filteredAuthorCountMap.forEach { (author, count) ->
+                                counts.forEach { (value, count) ->
                                     FilterChip(
-                                        selected = author in draftSelectedAuthors,
-                                        onClick = { onAuthorToggle(author) },
-                                        label = { Text("$author  $count") }
+                                        selected = value in selected,
+                                        onClick = { onToggle(value) },
+                                        label = { Text("$value  $count") }
                                     )
                                 }
                             }

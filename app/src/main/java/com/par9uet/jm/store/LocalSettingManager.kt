@@ -1,6 +1,8 @@
 package com.par9uet.jm.store
 
 import com.par9uet.jm.data.models.BlockedTagTemplate
+import com.par9uet.jm.data.models.AiChatModel
+import com.par9uet.jm.data.models.COVER_CACHE_MAX_DURATION_HOURS
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.storage.LocalSettingStorage
@@ -89,11 +91,41 @@ class LocalSettingManager(
     fun updateReadTapMode(readTapMode: String) =
         updateSetting { it.copy(readTapMode = readTapMode) }
 
+    fun updateShowComicIdAsSubtitle(enabled: Boolean) =
+        updateSetting { it.copy(showComicIdAsSubtitle = enabled) }
+
+    fun updateComicReadingMemoryEnabled(enabled: Boolean) =
+        updateSetting { it.copy(comicReadingMemoryEnabled = enabled) }
+
+    fun updateChapterReadingMemoryEnabled(enabled: Boolean) =
+        updateSetting { it.copy(chapterReadingMemoryEnabled = enabled) }
+
+    fun updateVolumeKeyPageTurningEnabled(enabled: Boolean) =
+        updateSetting { it.copy(volumeKeyPageTurningEnabled = enabled) }
+
+    fun updateCoverCacheDurationHours(hours: Int) =
+        updateSetting { it.copy(coverCacheDurationHours = hours.coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS)) }
+
     fun updateLauncherDisguise(launcherDisguise: String) {
         val disguise = LauncherDisguise.fromId(launcherDisguise)
         updateSetting { it.copy(launcherDisguise = disguise.id) }
         launcherDisguiseApplier.apply(disguise)
     }
+
+    fun updateWoodenFishCount(count: Long) =
+        updateSetting { it.copy(woodenFishCount = count.coerceAtLeast(0L)) }
+
+    fun updateWoodenFishSoundEnabled(enabled: Boolean) =
+        updateSetting { it.copy(woodenFishSoundEnabled = enabled) }
+
+    fun updateWoodenFishVibrationEnabled(enabled: Boolean) =
+        updateSetting { it.copy(woodenFishVibrationEnabled = enabled) }
+
+    fun updateSplashLoadingEnabled(enabled: Boolean) =
+        updateSetting { it.copy(splashLoadingEnabled = enabled) }
+
+    fun updateAiModel(model: String) =
+        updateSetting { it.copy(aiModel = AiChatModel.fromId(model).id) }
 
     fun updateNotificationSettings(show: Boolean, showName: Boolean) =
         updateSetting {
@@ -175,13 +207,50 @@ class LocalSettingManager(
         updateSetting { it.copy(appLockEnabled = enabled) }
 
     fun updateAppLockPassword(pwd: String) =
-        updateSetting { it.copy(appLockPassword = pwd) }
+        updateSetting {
+            val nextDuressPassword = it.appLockDuressPassword.takeIf { duress ->
+                pwd.isNotBlank() &&
+                    duress != pwd &&
+                    duress.length == pwd.length &&
+                    duress.all(Char::isDigit)
+            }.orEmpty()
+            it.copy(
+                appLockPassword = pwd,
+                appLockDuressPassword = nextDuressPassword,
+                appLockDuressEnabled = if (nextDuressPassword.isBlank() && it.appLockDuressPattern.isBlank()) {
+                    false
+                } else it.appLockDuressEnabled,
+            )
+        }
 
     fun updateAppLockPasswordLength(len: Int) =
-        updateSetting { it.copy(appLockPasswordLength = len.coerceIn(4, 8)) }
+        updateSetting {
+            val normalizedLength = len.coerceIn(4, 8)
+            val nextDuressPassword = it.appLockDuressPassword.takeIf { password ->
+                password.length == normalizedLength && password.all(Char::isDigit)
+            }.orEmpty()
+            it.copy(
+                appLockPasswordLength = normalizedLength,
+                appLockDuressPassword = nextDuressPassword,
+                appLockDuressEnabled = if (nextDuressPassword.isBlank() && it.appLockDuressPattern.isBlank()) {
+                    false
+                } else it.appLockDuressEnabled,
+            )
+        }
 
     fun updateAppLockPattern(pattern: String) =
-        updateSetting { it.copy(appLockPattern = pattern) }
+        updateSetting {
+            val nextDuressPattern = it.appLockDuressPattern.takeIf { duress ->
+                pattern.isNotBlank() && duress != pattern
+            }.orEmpty()
+            it.copy(
+                appLockPattern = pattern,
+                appLockDuressPattern = nextDuressPattern,
+                appLockDuressEnabled = if (nextDuressPattern.isBlank() && it.appLockDuressPassword.isBlank()) {
+                    false
+                } else it.appLockDuressEnabled,
+            )
+        }
 
     fun updateAppLockUnlockMode(mode: String) =
         updateSetting { it.copy(appLockUnlockMode = mode) }
@@ -200,6 +269,41 @@ class LocalSettingManager(
 
     fun updateAppLockRequiredMethods(methods: List<String>) =
         updateSetting { it.copy(appLockRequiredMethods = methods.distinct()) }
+
+    fun updateAppLockDuressEnabled(enabled: Boolean) =
+        updateSetting {
+            it.copy(
+                appLockDuressEnabled = enabled &&
+                    (it.appLockDuressPassword.isNotBlank() || it.appLockDuressPattern.isNotBlank())
+            )
+        }
+
+    fun updateAppLockDuressPassword(password: String) =
+        updateSetting {
+            val valid = password.isNotBlank() &&
+                password != it.appLockPassword &&
+                password.length == it.appLockPasswordLength &&
+                password.all(Char::isDigit)
+            val nextPassword = if (valid) password else ""
+            it.copy(
+                appLockDuressPassword = nextPassword,
+                appLockDuressEnabled = if (nextPassword.isBlank() && it.appLockDuressPattern.isBlank()) {
+                    false
+                } else it.appLockDuressEnabled,
+            )
+        }
+
+    fun updateAppLockDuressPattern(pattern: String) =
+        updateSetting {
+            val valid = pattern.isNotBlank() && pattern != it.appLockPattern
+            val nextPattern = if (valid) pattern else ""
+            it.copy(
+                appLockDuressPattern = nextPattern,
+                appLockDuressEnabled = if (nextPattern.isBlank() && it.appLockDuressPassword.isBlank()) {
+                    false
+                } else it.appLockDuressEnabled,
+            )
+        }
 
     fun updateColorPalettePreset(preset: String) =
         updateSetting { it.copy(colorPalettePreset = preset) }
@@ -253,8 +357,8 @@ class LocalSettingManager(
     /**
      * 应用从备份恢复的 [LocalSetting]。
      *
-     * 备份中已剥离 appLockPassword 与 appLockPattern 明文，因此恢复时保留当前设备的应用锁
-     * 相关字段（enabled/password/length/pattern/unlockMode/biometric），避免恢复后应用锁状态异常。
+     * 备份中已剥离应用锁与胁迫凭据明文，因此恢复时保留当前设备的应用锁
+     * 相关字段，避免恢复后应用锁状态异常。
      * 若恢复导致 launcherDisguise 变化，会重新应用伪装图标。
      */
     fun applyLocalSetting(setting: LocalSetting, includeDownloadPath: Boolean = true) {
@@ -271,6 +375,9 @@ class LocalSettingManager(
                 appLockFaceEnabled = current.appLockFaceEnabled,
                 appLockUnlockRule = current.appLockUnlockRule,
                 appLockRequiredMethods = current.appLockRequiredMethods,
+                appLockDuressEnabled = current.appLockDuressEnabled,
+                appLockDuressPassword = current.appLockDuressPassword,
+                appLockDuressPattern = current.appLockDuressPattern,
                 downloadTreeUri = if (includeDownloadPath) setting.downloadTreeUri else current.downloadTreeUri,
             )
         }

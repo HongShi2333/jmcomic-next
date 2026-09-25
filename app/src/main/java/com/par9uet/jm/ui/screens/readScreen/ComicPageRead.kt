@@ -4,6 +4,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
@@ -192,11 +193,12 @@ fun ComicPageRead(
         userScrollEnabled = !tapOnly && !zoomState.isZoomed
     ) { page ->
         val item = list.getOrNull(page) ?: return@HorizontalPager
-        ComicPicImage(
-            comicPicImageState = item,
-            modifier = Modifier
-                .fillMaxSize(),
-            contentScale = ContentScale.Fit
-        )
+        Box(modifier = Modifier.fillMaxSize()) {
+            ComicPicImage(
+                comicPicImageState = item,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit
+            )
+        }
     }
 }

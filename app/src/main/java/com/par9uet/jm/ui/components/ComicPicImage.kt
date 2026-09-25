@@ -31,7 +31,7 @@ fun ComicPicImage(
 
     val retryImageDecode = {
         coroutineScope.launch {
-            comicPicImageState.decode(context)
+            comicPicImageState.decode(context, forceReload = true)
         }
     }
 

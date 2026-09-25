@@ -40,8 +40,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.par9uet.jm.cache.getCommonCacheDir
+import com.par9uet.jm.cache.getComicCoverCacheDir
 import com.par9uet.jm.cache.getDownloadDir
+import com.par9uet.jm.cache.getLegacyDownloadDir
 import com.par9uet.jm.cache.cachePathSize
 import com.par9uet.jm.cache.deleteCachePath
 import com.par9uet.jm.cache.isDocumentCachePath
@@ -89,16 +90,16 @@ fun CacheCleanupScreen(
         withContext(Dispatchers.IO) {
             val items = mutableListOf<CacheItem>()
 
-            val commonCacheDir = getCommonCacheDir(context)
-            val commonSize = dirSize(commonCacheDir)
+            val comicCoverCacheDir = getComicCoverCacheDir(context)
+            val comicCoverCacheSize = dirSize(comicCoverCacheDir)
             items.add(
                 CacheItem(
-                    id = "common",
+                    id = "comic_covers",
                     icon = Icons.Default.Cached,
-                    title = "图片缓存",
-                    description = "Coil 图片加载缓存，清理后图片需重新下载",
-                    sizeBytes = commonSize,
-                    dir = commonCacheDir
+                    title = "漫画封面缓存",
+                    description = "封面与图片加载缓存，清理后图片需重新下载",
+                    sizeBytes = comicCoverCacheSize,
+                    dir = comicCoverCacheDir
                 )
             )
 
@@ -149,7 +150,10 @@ fun CacheCleanupScreen(
             )
 
             val totalAppCache = context.cacheDir
-            val totalSize = dirSize(totalAppCache) + documentPaths.sumOf { cachePathSize(context, it) }
+            val totalSize = dirSize(totalAppCache) +
+                dirSize(getDownloadDir(context)) +
+                dirSize(getLegacyDownloadDir(context)) +
+                documentPaths.sumOf { cachePathSize(context, it) }
             items.add(
                 CacheItem(
                     id = "total",
@@ -191,24 +195,31 @@ fun CacheCleanupScreen(
                             withContext(Dispatchers.IO) {
                                 val selectedIds = selectedItems.mapTo(mutableSetOf()) { it.id }
                                 val clearAll = "total" in selectedIds
-                                val clearImageCache = clearAll || "common" in selectedIds
+                                val clearImageCache = clearAll || "comic_covers" in selectedIds
                                 if (clearImageCache) {
-                                    val imageCacheDir = getCommonCacheDir(context)
+                                    val imageCacheDir = getComicCoverCacheDir(context)
                                     freedBytes += dirSize(imageCacheDir)
+                                    runCatching { imageLoader.memoryCache?.clear() }
                                     runCatching { imageLoader.diskCache?.clear() }
                                     // Coil keeps this cache instance alive; never delete its root directory directly.
-                                    getCommonCacheDir(context)
+                                    getComicCoverCacheDir(context)
                                 }
 
                                 if (clearAll) {
                                     context.cacheDir.listFiles().orEmpty()
-                                        .filterNot { it.name == "common" }
+                                        .filterNot { it.name in setOf("common", "comic_covers") }
                                         .forEach { child ->
                                             freedBytes += dirSize(child)
                                             child.deleteRecursively()
                                         }
+                                    listOf(getDownloadDir(context), getLegacyDownloadDir(context))
+                                        .distinctBy { it.absolutePath }
+                                        .forEach { dir ->
+                                            freedBytes += dirSize(dir)
+                                            dir.deleteRecursively()
+                                        }
                                 } else {
-                                    selectedItems.filter { it.id !in setOf("common", "total") }.forEach { item ->
+                                    selectedItems.filter { it.id !in setOf("comic_covers", "total") }.forEach { item ->
                                         item.dir?.let { dir ->
                                             freedBytes += dirSize(dir)
                                             dir.deleteRecursively()

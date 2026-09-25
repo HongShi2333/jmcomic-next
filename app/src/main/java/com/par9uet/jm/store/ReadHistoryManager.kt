@@ -86,6 +86,16 @@ class ReadHistoryManager(
         return entry.lastPageIndex.coerceIn(0, entry.lastChapterPageCount - 1)
     }
 
+    /** Finds the persisted series key before chapter detail has finished loading. */
+    fun historyKeyForChapter(
+        chapterId: Int,
+        history: Map<Int, ComicReadHistory> = _readHistoryState.value,
+    ): Int {
+        return history.entries.firstOrNull { (_, entry) ->
+            entry.lastChapterId == chapterId || chapterId in entry.readChapterIds
+        }?.key ?: chapterId
+    }
+
     override suspend fun init() {
         log("加载阅读历史")
         _readHistoryState.update { readHistoryStorage.get() }

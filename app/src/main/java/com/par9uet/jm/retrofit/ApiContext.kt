@@ -1,14 +1,12 @@
 package com.par9uet.jm.retrofit
 
-import com.par9uet.jm.BuildConfig
 import com.par9uet.jm.utils.md5
 
-// Secrets are injected at build time; no service credential is stored in source.
-val BUILTIN_TOKEN_SECRET: String
-    get() = BuildConfig.JM_BUILTIN_TOKEN_SECRET
+// 内置 API 模式常量（来自 JMComic-Api-Java 库）
+const val BUILTIN_TOKEN_SECRET = "18comicAPP"
 const val BUILTIN_APP_VERSION = "2.0.20"
-val APP_DATA_SECRET: String
-    get() = BuildConfig.JM_APP_DATA_SECRET
+// 数据解密密钥（两种模式共用）
+const val APP_DATA_SECRET = "185Hcomic3PAPP7R"
 
 /**
  * 管理 API 请求的上下文信息。

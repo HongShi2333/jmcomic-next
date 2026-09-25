@@ -7,7 +7,8 @@ enum class LauncherDisguise(
 ) {
     Default("default", "JMcomic", ".DefaultLauncherAlias"),
     SystemTools("system_tools", "系统工具", ".SystemToolsLauncherAlias"),
-    Gallery("gallery", "相册", ".GalleryLauncherAlias");
+    Gallery("gallery", "相册", ".GalleryLauncherAlias"),
+    WoodenFish("wooden_fish", "木鱼", ".WoodenFishLauncherAlias");
 
     companion object {
         fun fromId(id: String?): LauncherDisguise {

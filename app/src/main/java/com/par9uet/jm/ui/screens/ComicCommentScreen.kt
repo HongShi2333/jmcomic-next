@@ -51,6 +51,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -244,6 +248,17 @@ fun ComicCommentArea(
     val commentLazyPagingItems = comicDetailViewModel.commentPager.collectAsLazyPagingItems()
     val likedCommentIds by comicDetailViewModel.likedCommentIds.collectAsState()
     var replyComment by remember(comicId) { mutableStateOf<Comment?>(null) }
+    // 评论列表拥有自己的滚动容器。评论列表到达边界时，不把剩余手势继续传给详情页，
+    // 避免用户在评论区滑动时详情信息同步位移造成嵌套滚动冲突。
+    val isolateParentScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset = available
+        }
+    }
 
     // 评论页独立使用时拉取漫画详情，用于在标题栏显示漫画标题与 JM 编码
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
@@ -316,7 +331,10 @@ fun ComicCommentArea(
             )
         }
     } else {
-        Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            modifier = modifier.nestedScroll(isolateParentScroll),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     modifier = Modifier.weight(1f),

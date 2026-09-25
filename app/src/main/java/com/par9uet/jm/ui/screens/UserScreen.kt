@@ -30,7 +30,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -167,8 +168,8 @@ private fun UserHeader(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 1.dp
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -305,26 +306,17 @@ private fun MenuGroup(
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary
         )
-        Surface(
+        Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            tonalElevation = 0.dp
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Column {
                 content()
             }
         }
     }
-}
-
-@Composable
-private fun MenuDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 72.dp),
-        thickness = 1.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
-    )
 }
 
 @Composable
@@ -385,7 +377,6 @@ fun UserScreen(
                     label = "下载中心",
                     onClick = { mainNavController.navigate("download") }
                 )
-                MenuDivider()
                 MenuItem(
                     icon = Icons.Default.Bookmarks,
                     label = "我的收藏",
@@ -393,7 +384,6 @@ fun UserScreen(
                         checkLoginThenDo { mainNavController.navigate("userCollectComic") }
                     }
                 )
-                MenuDivider()
                 MenuItem(
                     icon = Icons.Default.History,
                     label = "历史观看",
@@ -401,7 +391,6 @@ fun UserScreen(
                         checkLoginThenDo { mainNavController.navigate("userHistoryComic") }
                     }
                 )
-                MenuDivider()
                 MenuItem(
                     icon = Icons.AutoMirrored.Filled.Comment,
                     label = "我的评论",
@@ -409,7 +398,6 @@ fun UserScreen(
                         checkLoginThenDo { mainNavController.navigate("userHistoryComment") }
                     }
                 )
-                MenuDivider()
                 MenuItem(
                     icon = Icons.Default.CalendarMonth,
                     label = "签到",
@@ -425,14 +413,12 @@ fun UserScreen(
                     label = "设置",
                     onClick = { mainNavController.navigate("appLocalSetting") }
                 )
-                MenuDivider()
                 MenuItem(
                     icon = Icons.Default.Tune,
                     label = "标签排除",
                     onClick = { mainNavController.navigate("blockedTags") }
                 )
                 if (isLogin) {
-                    MenuDivider()
                     MenuItem(
                         icon = Icons.AutoMirrored.Filled.Logout,
                         label = "退出登录",

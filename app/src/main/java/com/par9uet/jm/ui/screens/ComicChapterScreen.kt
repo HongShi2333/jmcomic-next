@@ -23,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ReadHistoryManager
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -32,18 +33,24 @@ fun ComicChapterScreen(
     currentChapterId: Int = -1,
     comicDetailViewModel: ComicDetailViewModel = koinActivityViewModel(),
     readHistoryManager: ReadHistoryManager = getKoin().get(),
+    localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val comicDetailState by comicDetailViewModel.comicDetailState.collectAsState()
     val comic = comicDetailState.data
     val comicChapterList = comic?.comicChapterList ?: listOf()
     val readHistory by readHistoryManager.readHistoryState.collectAsState()
-    val readChapterIds = remember(comic, readHistory) {
-        comic?.let {
-            readHistoryManager.readChapterIds(
-                readHistoryManager.historyKey(it, it.id),
-                readHistory
-            )
-        } ?: emptySet()
+    val localSetting by localSettingManager.localSettingState.collectAsState()
+    val readChapterIds = remember(comic, readHistory, localSetting.chapterReadingMemoryEnabled) {
+        if (localSetting.chapterReadingMemoryEnabled) {
+            comic?.let {
+                readHistoryManager.readChapterIds(
+                    readHistoryManager.historyKey(it, it.id),
+                    readHistory
+                )
+            } ?: emptySet()
+        } else {
+            emptySet()
+        }
     }
     val mainNavController = LocalMainNavController.current
 
@@ -74,7 +81,8 @@ fun ComicChapterScreen(
         ) {
             itemsIndexed(comicChapterList, key = { _, item -> item.id }) { index, item ->
                 val read = item.id in readChapterIds
-                val isCurrent = currentChapterId > 0 && item.id == currentChapterId
+                val isCurrent = localSetting.chapterReadingMemoryEnabled &&
+                    currentChapterId > 0 && item.id == currentChapterId
                 AssistChip(
                     modifier = Modifier.fillMaxSize(),
                     colors = when {

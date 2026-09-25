@@ -18,11 +18,9 @@ private val hiddenDownloadTrees = mutableSetOf<String>()
 private val cacheImageDisplayName = Regex("""^(cover|\d+)\.(webp|jpg|jpeg|png)$""", RegexOption.IGNORE_CASE)
 
 /**
- * Hide a custom cache tree from the system gallery.
- *
- * `.nomedia` must exist before images are written; MediaStore will not drop
- * already-indexed photos just because the marker appears later, so this also
- * best-effort deletes matching cache image rows.
+ * Keep custom cache trees out of the system gallery. The marker is created
+ * before downloads start, and already-indexed cache images are removed on a
+ * best-effort basis for external-storage document providers.
  */
 fun ensureDownloadTreeHiddenFromGallery(context: Context, treeUri: String) {
     if (treeUri.isBlank()) return
@@ -78,11 +76,7 @@ internal fun relativePathFromExternalStorageDocumentId(documentId: String): Stri
 
 internal fun isCacheImageDisplayName(name: String): Boolean = cacheImageDisplayName.matches(name)
 
-private fun notifyMediaScannerOfNomedia(
-    context: Context,
-    documentId: String,
-    relativePath: String?,
-) {
+private fun notifyMediaScannerOfNomedia(context: Context, documentId: String, relativePath: String?) {
     if (relativePath == null || !documentId.startsWith("primary:")) return
     val nomedia = File(Environment.getExternalStorageDirectory(), relativePath + NOMEDIA_FILE_NAME)
     runCatching {

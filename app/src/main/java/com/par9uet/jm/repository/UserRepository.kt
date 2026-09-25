@@ -14,7 +14,8 @@ interface UserRepository {
     suspend fun getCollectComicList(
         page: Int = 1,
         order: CollectComicOrderFilter = CollectComicOrderFilter.COLLECT_TIME,
-        folderId: Int = 0
+        folderId: Int = 0,
+        enrichTags: Boolean = false,
     ): NetWorkResult<UserCollectComicListResponse>
 
     suspend fun getHistoryComicList(page: Int = 1): NetWorkResult<UserHistoryComicListResponse>

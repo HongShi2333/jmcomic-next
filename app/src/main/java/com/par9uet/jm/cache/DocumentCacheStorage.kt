@@ -232,7 +232,16 @@ fun writeDocumentComicCacheConfig(
     gson: Gson = Gson(),
 ) {
     val rootPath = getComicDownloadRootPath(context, comic)
-    val coverPath = getComicCoverDownloadPath(context, comic)
+    // Do not create a placeholder cover document while merely writing the
+    // manifest. SAF providers persist a newly-created document immediately,
+    // so calling getComicCoverDownloadPath here used to leave a 0-byte
+    // cover.webp behind whenever the cover request had failed.
+    val coverPath = findCacheChildPath(context, rootPath, "cover.webp")
+        ?.takeIf { cachePathHasContent(context, it) }
+        ?: chapters.asSequence()
+            .map { it.coverPath }
+            .firstOrNull { it.isNotBlank() && cachePathHasContent(context, it) }
+            .orEmpty()
     val config = buildComicCacheConfig(comic, chapters, rootPath, coverPath) { path ->
         listComicImageEntries(context, path).map(CacheImageEntry::name)
     }
@@ -249,26 +258,19 @@ fun deleteCachePath(context: Context, path: String): Boolean = if (isDocumentCac
 }
 
 fun findOrCreateCacheDocument(context: Context, parent: Uri, name: String, mimeType: String): Uri? {
-    findExistingCacheDocument(context, parent, name)?.let { return it }
-    return runCatching {
-        DocumentsContract.createDocument(context.contentResolver, parent, mimeType, name)
-    }.getOrNull() ?: findExistingCacheDocument(context, parent, name)
-}
-
-private fun findExistingCacheDocument(context: Context, parent: Uri, name: String): Uri? {
     val children = DocumentsContract.buildChildDocumentsUriUsingTree(parent, DocumentsContract.getDocumentId(parent))
-    return context.contentResolver.query(
+    context.contentResolver.query(
         children,
         arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
         null, null, null,
     )?.use { cursor ->
         while (cursor.moveToNext()) {
             if (cursor.getString(1) == name) {
-                return@use DocumentsContract.buildDocumentUriUsingTree(parent, cursor.getString(0))
+                return DocumentsContract.buildDocumentUriUsingTree(parent, cursor.getString(0))
             }
         }
-        null
     }
+    return DocumentsContract.createDocument(context.contentResolver, parent, mimeType, name)
 }
 
 private fun documentPathSize(context: Context, uri: Uri): Long {

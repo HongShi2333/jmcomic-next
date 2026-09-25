@@ -14,3 +14,10 @@
 .cxx
 local.properties
 release-key
+secrets.properties
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key

@@ -37,10 +37,13 @@ import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.screens.AppLockScreen
 import com.par9uet.jm.ui.screens.AppScreen
+import com.par9uet.jm.ui.screens.DuressSession
+import com.par9uet.jm.ui.screens.DuressWoodenFishScreen
 import com.par9uet.jm.ui.screens.LoadingScreen
 import com.par9uet.jm.ui.screens.NsfwWarningDialog
 import com.par9uet.jm.ui.screens.WelcomeScreen
 import com.par9uet.jm.ui.components.ComicCoverImage
+import com.par9uet.jm.ui.viewModel.ComicViewModel
 import com.par9uet.jm.ui.viewModel.GlobalViewModel
 import com.par9uet.jm.ui.viewModel.UserViewModel
 import kotlinx.coroutines.flow.first
@@ -50,6 +53,7 @@ import org.koin.compose.viewmodel.koinActivityViewModel
 @Composable
 fun App(
     globalViewModel: GlobalViewModel = koinActivityViewModel(),
+    comicViewModel: ComicViewModel = koinActivityViewModel(),
     userViewModel: UserViewModel = koinActivityViewModel(),
     toastManager: ToastManager = getKoin().get(),
     localSettingManager: LocalSettingManager = getKoin().get(),
@@ -67,8 +71,17 @@ fun App(
     var sessionNsfwDismissed by remember { mutableStateOf(false) }
     // 首次启动引导
     var showOnboarding by remember { mutableStateOf(false) }
-    // 启动加载动画（初始化期间及引导完成后显示）
-    var showLoadingScreen by remember { mutableStateOf(true) }
+    // 应用锁通过后才启动开屏动画；首页首批数据到达后自动关闭。
+    var splashStarted by remember { mutableStateOf(false) }
+    var splashVisible by remember { mutableStateOf(false) }
+    var splashSkipVisible by remember { mutableStateOf(false) }
+    val homeComicState by comicViewModel.homeComicState.collectAsState()
+
+    fun enterDuressMode() {
+        DuressSession.active = true
+        isLocked = true
+        hasUnlockedOnce = false
+    }
 
     // 应用锁配置只依赖本地存储：先读取并决定是否锁屏，再启动其余初始化任务。
     LaunchedEffect(Unit) {
@@ -88,11 +101,30 @@ fun App(
         }
         globalViewModel.init()
     }
-    // 用户要求开屏过渡固定约 3 秒；若启用应用锁，先完成锁屏核验再开始计时。
-    LaunchedEffect(settingsLoaded, showOnboarding) {
-        if (settingsLoaded && !showOnboarding) {
-            kotlinx.coroutines.delay(1500L)
-            showLoadingScreen = false
+    // 解锁后启动首页预加载过渡。超过一秒仍没有首页数据时允许用户跳过等待。
+    LaunchedEffect(
+        settingsLoaded,
+        showOnboarding,
+        hasUnlockedOnce,
+        localSetting.splashLoadingEnabled,
+        homeComicState.list.isNotEmpty()
+    ) {
+        if (!settingsLoaded || showOnboarding || !hasUnlockedOnce || splashStarted) {
+            return@LaunchedEffect
+        }
+        splashStarted = true
+        if (!localSetting.splashLoadingEnabled) return@LaunchedEffect
+        splashVisible = true
+        kotlinx.coroutines.delay(1000L)
+        if (splashVisible && homeComicState.list.isEmpty()) {
+            splashSkipVisible = true
+        }
+    }
+
+    LaunchedEffect(homeComicState.list.isNotEmpty()) {
+        if (homeComicState.list.isNotEmpty()) {
+            splashVisible = false
+            splashSkipVisible = false
         }
     }
     // 开启应用锁立即进入核验；关闭时立即解除。首次加载也由这里进行安全兜底。
@@ -141,7 +173,13 @@ fun App(
     var pendingNavComicId by remember { mutableStateOf(-1) }
     val mainNavController = rememberNavController()
 
-    DisposableEffect(lifecycleOwner, localSetting.clipboardAutoDetectEnabled, settingsLoaded, isLocked) {
+    DisposableEffect(
+        lifecycleOwner,
+        localSetting.clipboardAutoDetectEnabled,
+        settingsLoaded,
+        isLocked,
+        lastClipboardText,
+    ) {
         if (!localSetting.clipboardAutoDetectEnabled || !settingsLoaded || isLocked) {
             onDispose { }
         } else {
@@ -150,10 +188,11 @@ fun App(
                     val clipText = clipboardManager.getText()?.text ?: ""
                     if (clipText.isNotBlank() && clipText != lastClipboardText) {
                         lastClipboardText = clipText
-                        val digits = clipText.filter { it.isDigit() }
-                        if (digits.length in 3..12) {
+                        extractClipboardComicId(clipText)?.let { comicId ->
+                            // 新的候选到来时先清理旧详情，避免上一次弹窗残留。
+                            clipboardDetectedComic = null
                             clipboardDetectLoading = true
-                            clipboardDetectedComicId = digits.toIntOrNull()
+                            clipboardDetectedComicId = comicId
                         }
                     }
                 }
@@ -175,10 +214,18 @@ fun App(
         when (result) {
             is com.par9uet.jm.retrofit.model.NetWorkResult.Success<*> -> {
                 @Suppress("UNCHECKED_CAST")
-                clipboardDetectedComic = (result.data as com.par9uet.jm.retrofit.model.ComicDetailResponse).toComic()
+                val comic = (result.data as com.par9uet.jm.retrofit.model.ComicDetailResponse).toComic()
+                if (comic.id == id && comic.name.isNotBlank()) {
+                    clipboardDetectedComic = comic
+                } else {
+                    clipboardDetectedComic = null
+                    clipboardDetectedComicId = null
+                }
             }
             else -> {
-                toastManager.showAsync("剪切板检测：漫画编码 ${id} 无效")
+                // 剪切板内容可能是普通文本、失效编号或暂时解析失败。
+                // 这些情况不应打断用户，也不应弹出没有详情的对话框。
+                clipboardDetectedComic = null
                 clipboardDetectedComicId = null
             }
         }
@@ -207,6 +254,10 @@ fun App(
 
     // 应用锁优先级最高：锁定时不创建主界面、剪切板弹窗或加载页。
     val showAppLock = settingsLoaded && localSetting.appLockEnabled && isLocked
+    if (DuressSession.active) {
+        DuressWoodenFishScreen()
+        return
+    }
     if (showAppLock && !hasUnlockedOnce) {
         AppLockScreen(
             unlockMode = localSetting.appLockUnlockMode,
@@ -222,12 +273,16 @@ fun App(
                 isLocked = false
                 hasUnlockedOnce = true
             },
+            duressEnabled = localSetting.appLockDuressEnabled,
+            duressPassword = localSetting.appLockDuressPassword,
+            duressPattern = localSetting.appLockDuressPattern,
+            onDuress = ::enterDuressMode,
         )
         return
     }
 
-    // 无锁或完成解锁后再显示短暂加载过渡
-    if (!settingsLoaded || (showLoadingScreen && !showOnboarding)) {
+    // 设置尚未加载完成时保留初始化页；应用锁通过后的开屏动画以覆盖层显示，避免阻塞主页面。
+    if (!settingsLoaded) {
         LoadingScreen()
         return
     }
@@ -262,14 +317,26 @@ fun App(
                     if (showNsfwDialog && canBlur) Modifier.blur(32.dp) else Modifier
                 )
         ) {
-            AppScreen(externalNavController = mainNavController)
+            AppScreen(
+                comicViewModel = comicViewModel,
+                externalNavController = mainNavController
+            )
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 80.dp)
-                    .imePadding()
+                .imePadding()
+            )
+        }
+        if (!showAppLock && splashVisible) {
+            LoadingScreen(
+                showSkipButton = splashSkipVisible,
+                onSkip = {
+                    splashVisible = false
+                    splashSkipVisible = false
+                }
             )
         }
         if (showNsfwDialog) {
@@ -379,7 +446,25 @@ fun App(
                     isLocked = false
                     hasUnlockedOnce = true
                 },
+                duressEnabled = localSetting.appLockDuressEnabled,
+                duressPassword = localSetting.appLockDuressPassword,
+                duressPattern = localSetting.appLockDuressPattern,
+                onDuress = ::enterDuressMode,
             )
         }
     }
+}
+
+private fun extractClipboardComicId(text: String): Int? {
+    val trimmed = text.trim()
+    val exact = Regex("(?i)^(?:jm\\s*)?(\\d{3,12})$")
+        .matchEntire(trimmed)
+        ?.groupValues
+        ?.getOrNull(1)
+    if (exact != null) return exact.toIntOrNull()
+
+    val embedded = Regex(
+        "(?i)(?:jm|album[\\s/=:]+|comic[\\s/=:]+|id[\\s:：=]+)(\\d{3,12})"
+    ).find(text)?.groupValues?.getOrNull(1)
+    return embedded?.toIntOrNull()
 }

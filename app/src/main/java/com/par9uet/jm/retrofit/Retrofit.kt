@@ -14,6 +14,8 @@ import com.par9uet.jm.utils.applyTlsCompat
 import com.par9uet.jm.utils.log
 import okhttp3.Cookie
 import okhttp3.CookieJar
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -59,6 +61,13 @@ class Retrofit(
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(15, TimeUnit.SECONDS)
+            .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+            .dispatcher(Dispatcher().apply {
+                // 首页、收藏和详情请求共享一个 Retrofit 客户端，
+                // 适度提高同主机并发以减少网络请求排队。
+                maxRequests = 24
+                maxRequestsPerHost = 8
+            })
             .addInterceptor(initInterceptor)
             .addInterceptor(baseUrlInterceptor)
             .addInterceptor(tokenInterceptor)

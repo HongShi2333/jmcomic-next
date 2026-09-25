@@ -57,7 +57,17 @@ fun getComicDownloadRootDir(context: Context, comic: DownloadComic): File {
 }
 
 fun getComicDownloadRootDir(context: Context, comicName: String): File {
-    return tryCreateDir(File(getDownloadDir(context), safeCacheFileName(comicName)))
+    val persistentRoot = File(getDownloadDir(context), safeCacheFileName(comicName))
+    if (!persistentRoot.exists()) {
+        val legacyRoot = File(getLegacyDownloadDir(context), safeCacheFileName(comicName))
+        if (legacyRoot.exists()) {
+            // The application startup sweep updates database paths together
+            // with the directory move. Until that sweep completes, keep the
+            // legacy root readable instead of moving it behind stale DAO paths.
+            return legacyRoot
+        }
+    }
+    return tryCreateDir(persistentRoot)
 }
 
 fun getComicChapterDownloadDir(context: Context, comic: DownloadComic): File {

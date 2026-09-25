@@ -7,11 +7,14 @@ import com.par9uet.jm.data.models.APP_LOCK_TYPE_PATTERN
 import com.par9uet.jm.data.models.APP_LOCK_METHOD_BIOMETRIC
 import com.par9uet.jm.data.models.APP_LOCK_RULE_ANY
 import com.par9uet.jm.data.models.APP_LOCK_RULE_REQUIRED
+import com.par9uet.jm.data.models.AiChatModel
 import com.par9uet.jm.data.models.BlockedTagTemplate
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_DEFAULT
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_BUILTIN
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_MIXED
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_NETWORK
+import com.par9uet.jm.data.models.COVER_CACHE_MAX_DURATION_HOURS
+import com.par9uet.jm.data.models.DEFAULT_COVER_CACHE_DURATION_HOURS
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.utils.flattenBlockedTagTemplates
@@ -68,6 +71,41 @@ class LocalSettingStorage(
                 } else {
                     listOf()
                 }
+                val savedPassword = if (savedJson.hasField("appLockPassword")) {
+                    saved.appLockPassword ?: ""
+                } else {
+                    ""
+                }
+                val savedPasswordLength = if (savedJson.hasField("appLockPasswordLength")) {
+                    saved.appLockPasswordLength.coerceIn(4, 8)
+                } else {
+                    4
+                }
+                val savedPattern = if (savedJson.hasField("appLockPattern")) {
+                    saved.appLockPattern ?: ""
+                } else {
+                    ""
+                }
+                val normalizedDuressPassword = if (savedJson.hasField("appLockDuressPassword")) {
+                    saved.appLockDuressPassword?.takeIf {
+                        savedPassword.isNotBlank() &&
+                            it.isNotBlank() &&
+                            it != savedPassword &&
+                            it.length == savedPasswordLength &&
+                            it.all(Char::isDigit)
+                    }.orEmpty()
+                } else {
+                    ""
+                }
+                val normalizedDuressPattern = if (savedJson.hasField("appLockDuressPattern")) {
+                    saved.appLockDuressPattern?.takeIf {
+                        savedPattern.isNotBlank() &&
+                            it.isNotBlank() &&
+                            it != savedPattern
+                    }.orEmpty()
+                } else {
+                    ""
+                }
                 saved.copy(
                     comicApiSourceList = listOf(
                         COMIC_API_SOURCE_BUILTIN,
@@ -98,21 +136,9 @@ class LocalSettingStorage(
                     },
                     blockedTagList = flattenBlockedTagTemplates(migratedTemplates),
                     blockedTagTemplateList = migratedTemplates,
-                    appLockPassword = if (savedJson.hasField("appLockPassword")) {
-                        saved.appLockPassword ?: ""
-                    } else {
-                        ""
-                    },
-                    appLockPasswordLength = if (savedJson.hasField("appLockPasswordLength")) {
-                        saved.appLockPasswordLength.coerceIn(4, 8)
-                    } else {
-                        4
-                    },
-                    appLockPattern = if (savedJson.hasField("appLockPattern")) {
-                        saved.appLockPattern ?: ""
-                    } else {
-                        ""
-                    },
+                    appLockPassword = savedPassword,
+                    appLockPasswordLength = savedPasswordLength,
+                    appLockPattern = savedPattern,
                     appLockUnlockMode = migratedUnlockMode,
                     appLockFingerprintEnabled = if (savedJson.hasField("appLockFingerprintEnabled")) {
                         saved.appLockFingerprintEnabled
@@ -134,6 +160,11 @@ class LocalSettingStorage(
                     } else if (migratedUnlockMode == "both") {
                         listOf(APP_LOCK_TYPE_PASSWORD, APP_LOCK_TYPE_PATTERN)
                     } else emptyList(),
+                    appLockDuressEnabled = savedJson.hasField("appLockDuressEnabled") &&
+                        saved.appLockDuressEnabled &&
+                        (normalizedDuressPassword.isNotBlank() || normalizedDuressPattern.isNotBlank()),
+                    appLockDuressPassword = normalizedDuressPassword,
+                    appLockDuressPattern = normalizedDuressPattern,
                     colorPalettePreset = if (savedJson.hasField("colorPalettePreset")) {
                         saved.colorPalettePreset
                     } else {
@@ -182,6 +213,56 @@ class LocalSettingStorage(
                         true
                     },
                     dohPreferIpv6 = if (savedJson.hasField("dohPreferIpv6")) saved.dohPreferIpv6 else false,
+                    showComicIdAsSubtitle = if (savedJson.hasField("showComicIdAsSubtitle")) {
+                        saved.showComicIdAsSubtitle
+                    } else {
+                        false
+                    },
+                    comicReadingMemoryEnabled = if (savedJson.hasField("comicReadingMemoryEnabled")) {
+                        saved.comicReadingMemoryEnabled
+                    } else {
+                        true
+                    },
+                    chapterReadingMemoryEnabled = if (savedJson.hasField("chapterReadingMemoryEnabled")) {
+                        saved.chapterReadingMemoryEnabled
+                    } else {
+                        true
+                    },
+                    volumeKeyPageTurningEnabled = if (savedJson.hasField("volumeKeyPageTurningEnabled")) {
+                        saved.volumeKeyPageTurningEnabled
+                    } else {
+                        false
+                    },
+                    coverCacheDurationHours = if (savedJson.hasField("coverCacheDurationHours")) {
+                        saved.coverCacheDurationHours.coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS)
+                    } else {
+                        DEFAULT_COVER_CACHE_DURATION_HOURS
+                    },
+                    woodenFishCount = if (savedJson.hasField("woodenFishCount")) {
+                        saved.woodenFishCount.coerceAtLeast(0L)
+                    } else {
+                        0L
+                    },
+                    woodenFishSoundEnabled = if (savedJson.hasField("woodenFishSoundEnabled")) {
+                        saved.woodenFishSoundEnabled
+                    } else {
+                        true
+                    },
+                    woodenFishVibrationEnabled = if (savedJson.hasField("woodenFishVibrationEnabled")) {
+                        saved.woodenFishVibrationEnabled
+                    } else {
+                        true
+                    },
+                    splashLoadingEnabled = if (savedJson.hasField("splashLoadingEnabled")) {
+                        saved.splashLoadingEnabled
+                    } else {
+                        true
+                    },
+                    aiModel = if (savedJson.hasField("aiModel")) {
+                        AiChatModel.fromId(saved.aiModel).id
+                    } else {
+                        AiChatModel.UnlimitedAi.id
+                    },
                 )
             }
         }

@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -67,6 +70,7 @@ import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.ChapterSingleSelectDialog
 import com.par9uet.jm.ui.components.ComicContentTag
+import com.par9uet.jm.ui.components.ComicIdChip
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.DownloadComicDetailViewModel
 import com.par9uet.jm.utils.CachedComicInfo
@@ -409,128 +413,62 @@ fun DownloadComicDetailScreen(
                 .padding(innerPadding)
                 .fillMaxSize()
                 .verticalScroll(scrollState)
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            LocalCover(
-                title = detailState.title,
-                coverPath = detailState.coverPath,
-                imageLoader = imageLoader
+            LocalCachedHeroCard(detailState = detailState, imageLoader = imageLoader)
+            LocalCachedTagCard(tags = detailState.tagList)
+            LocalCachedChapterDirectoryCard(
+                chapters = detailState.readableChapters,
+                onOpenAll = { activeDialog = DownloadDetailDialog.ReadChapter },
+                onRead = { chapter ->
+                    if (chapter.isAvailable) {
+                        mainNavController.navigate("localComicRead/${chapter.id}")
+                    }
+                },
             )
-            Column(
-                modifier = Modifier.padding(horizontal = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    modifier = Modifier.padding(top = 10.dp),
-                    text = detailState.title,
-                    fontSize = 18.sp,
-                    lineHeight = 1.5.em,
-                    fontWeight = FontWeight.Bold,
+            LocalCacheSummaryCard(
+                detailState = detailState,
+                cachedInfo = cachedInfo,
+                forceIntegrityChecking = forceIntegrityChecking,
+                onCheckIntegrity = {
+                    forcedIntegrityResult = null
+                    forceIntegrityCheckToken++
+                },
+            )
+            if (detailState.isDownloading) {
+                val progressGroupId = detailState.allItems.firstOrNull()
+                    ?.let { item -> item.groupId.takeIf { it != 0 } ?: item.id }
+                val progressMessage = progressMessages[progressGroupId].orEmpty()
+                val animatedProgress by animateFloatAsState(
+                    targetValue = detailState.groupProgress,
+                    label = "downloadProgress"
                 )
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    detailState.authorList.forEach {
-                        key(it) {
-                            Text(
-                                text = it,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 18.sp,
-                                lineHeight = 27.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-                    }
-                }
-                if (detailState.tagList.isNotEmpty()) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        detailState.tagList.forEach {
-                            key(it) {
-                                ComicContentTag(it)
-                            }
-                        }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CachedInfoItem(
-                        modifier = Modifier.weight(0.5f),
-                        icon = Icons.Default.DownloadDone,
-                        label = "缓存状态",
-                        value = detailState.statusSummary
-                    )
-                    CachedInfoItem(
-                        modifier = Modifier.weight(0.5f),
-                        icon = Icons.Default.RemoveRedEye,
-                        label = "本地阅读",
-                        value = if (detailState.canRead) "可用" else "未完成"
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CachedInfoItem(
-                        modifier = Modifier.weight(0.5f),
-                        icon = Icons.AutoMirrored.Filled.MenuBook,
-                        label = "缓存章节",
-                        value = "${detailState.completeChapterCount} / ${detailState.totalChapterCount}"
-                    )
-                    CachedInfoItem(
-                        modifier = Modifier.weight(0.5f),
-                        icon = Icons.Default.Storage,
-                        label = "图片数量",
-                        value = "${cachedInfo?.imageCount ?: 0} 张"
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CachedInfoItem(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Default.FolderZip,
-                        label = "占用空间",
-                        value = formatBytes(cachedInfo?.totalBytes ?: 0L)
-                    )
-                }
-                Row(
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    shape = MaterialTheme.shapes.extraLarge,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
                 ) {
-                    TextButton(
-                        enabled = !forceIntegrityChecking,
-                        onClick = {
-                            forcedIntegrityResult = null
-                            forceIntegrityCheckToken++
-                        },
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                        Text(if (forceIntegrityChecking) "检查中…" else "完整性检查")
-                    }
-                }
-                if (detailState.isDownloading) {
-                    val progressGroupId = detailState.allItems.firstOrNull()
-                        ?.let { item -> item.groupId.takeIf { it != 0 } ?: item.id }
-                    val progressMessage = progressMessages[progressGroupId].orEmpty()
-                    val animatedProgress by animateFloatAsState(
-                        targetValue = detailState.groupProgress,
-                        label = "downloadProgress"
-                    )
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             CachedInfoItem(
-                                modifier = Modifier.weight(0.5f),
+                                modifier = Modifier.weight(1f),
                                 icon = Icons.Default.Speed,
                                 label = "下载速度",
-                                value = formatSpeed(detailState.downloadSpeed)
+                                value = formatSpeed(detailState.downloadSpeed),
                             )
                             Text(
                                 text = "${(detailState.groupProgress * 100).toInt()}%",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
                             )
                         }
                         if (progressMessage.isNotBlank()) {
@@ -539,6 +477,7 @@ fun DownloadComicDetailScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         LinearProgressIndicator(
@@ -547,40 +486,25 @@ fun DownloadComicDetailScreen(
                         )
                     }
                 }
-                if (detailState.hasError) {
-                    FilledTonalButton(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { downloadManager.retryGroup(viewModel.groupId.value) },
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = null,
-                            modifier = Modifier.padding(end = 6.dp)
-                        )
-                        Text("重试下载")
-                    }
-                }
-                Text(
-                    text = "缓存时间：${formatTime(detailState.createTime)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "封面：${detailState.coverPath.ifBlank { "无" }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "缓存路径：${detailState.cachePath.ifBlank { detailState.zipPath.ifBlank { "无" } }}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "阅读和导出都只显示已缓存完成的章节；重复选择已缓存章节时不会重复下载。",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
+            if (detailState.hasError) {
+                FilledTonalButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { downloadManager.retryGroup(viewModel.groupId.value) },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.padding(end = 6.dp),
+                    )
+                    Text("重试下载")
+                }
+            }
+            Text(
+                text = "阅读和导出只显示已缓存完成的章节；重复选择已缓存章节时不会重复下载。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -593,6 +517,265 @@ private enum class DownloadDetailDialog {
 private enum class PdfExportMode {
     Merge,
     SplitByChapter
+}
+
+@Composable
+private fun LocalCachedHeroCard(
+    detailState: com.par9uet.jm.ui.viewModel.DownloadComicDetailState,
+    imageLoader: ImageLoader,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Box(modifier = Modifier.width(142.dp)) {
+                LocalCover(
+                    title = detailState.title,
+                    coverPath = detailState.coverPath,
+                    imageLoader = imageLoader,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (detailState.remoteCoverComicId > 0) {
+                    ComicIdChip(
+                        comicId = detailState.remoteCoverComicId,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = detailState.title,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
+                if (detailState.authorList.isNotEmpty()) {
+                    Text(
+                        text = detailState.authorList.joinToString(" · "),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = if (detailState.canRead) "已缓存，可直接阅读" else "正在准备缓存内容",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalCachedTagCard(tags: List<String>) {
+    if (tags.isEmpty()) return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "内容信息",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "标签",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                tags.distinct().forEach { tag ->
+                    key(tag) { ComicContentTag(tag) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalCachedChapterDirectoryCard(
+    chapters: List<com.par9uet.jm.data.models.ComicChapter>,
+    onOpenAll: () -> Unit,
+    onRead: (com.par9uet.jm.data.models.ComicChapter) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "章节目录",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (chapters.isEmpty()) "暂无缓存章节" else "${chapters.size} 个章节",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (chapters.size > 1) {
+                    TextButton(onClick = onOpenAll) { Text("选择章节") }
+                }
+            }
+            if (chapters.isEmpty()) {
+                Text(
+                    text = "完成下载后，章节会显示在这里。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                chapters.forEachIndexed { index, chapter ->
+                    val chapterColor = if (chapter.isAvailable) {
+                        MaterialTheme.colorScheme.surfaceContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = chapter.isAvailable) { onRead(chapter) },
+                        shape = MaterialTheme.shapes.medium,
+                        color = chapterColor,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "${index + 1}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(30.dp),
+                            )
+                            Text(
+                                text = chapter.name.ifBlank { "第 ${index + 1} 章" },
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (!chapter.isAvailable) {
+                                Text(
+                                    text = "未完成",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalCacheSummaryCard(
+    detailState: com.par9uet.jm.ui.viewModel.DownloadComicDetailState,
+    cachedInfo: CachedComicInfo?,
+    forceIntegrityChecking: Boolean,
+    onCheckIntegrity: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "缓存信息",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CachedInfoItem(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.DownloadDone,
+                    label = "状态",
+                    value = detailState.statusSummary,
+                )
+                CachedInfoItem(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.RemoveRedEye,
+                    label = "本地阅读",
+                    value = if (detailState.canRead) "可用" else "未完成",
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CachedInfoItem(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.AutoMirrored.Filled.MenuBook,
+                    label = "缓存章节",
+                    value = "${detailState.completeChapterCount} / ${detailState.totalChapterCount}",
+                )
+                CachedInfoItem(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Default.Storage,
+                    label = "图片数量",
+                    value = "${cachedInfo?.imageCount ?: 0} 张",
+                )
+            }
+            CachedInfoItem(
+                modifier = Modifier.fillMaxWidth(),
+                icon = Icons.Default.FolderZip,
+                label = "占用空间",
+                value = formatBytes(cachedInfo?.totalBytes ?: 0L),
+            )
+            FilledTonalButton(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !forceIntegrityChecking,
+                onClick = onCheckIntegrity,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+                Text(if (forceIntegrityChecking) "检查中…" else "检查缓存完整性")
+            }
+            Text(
+                text = "缓存时间：${formatTime(detailState.createTime)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "缓存路径：${detailState.cachePath.ifBlank { detailState.zipPath.ifBlank { "无" } }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable
@@ -650,7 +833,8 @@ private fun DownloadDetailBottomActions(
 private fun LocalCover(
     title: String,
     coverPath: String,
-    imageLoader: ImageLoader
+    imageLoader: ImageLoader,
+    modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     val context = LocalContext.current
     val localCoverModel: Any? = when {
@@ -667,15 +851,11 @@ private fun LocalCover(
             imageLoader = imageLoader,
             contentDescription = "${title}的封面",
             contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.75f)
+            modifier = modifier.aspectRatio(0.75f),
         )
     } else {
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.75f)
+            modifier = modifier.aspectRatio(0.75f),
         )
     }
 }

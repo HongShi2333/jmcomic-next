@@ -131,7 +131,7 @@ class SearchComicPagingSource(
     }
 
     private fun ComicDetailResponse.containsAnyExcludedTag(excludedTagSet: Set<String>): Boolean {
-        return (tags + actors + works)
+        return (tags + hidden_tags.orEmpty() + actors + works)
             .map { it.toTagKey() }
             .any { it in excludedTagSet }
     }

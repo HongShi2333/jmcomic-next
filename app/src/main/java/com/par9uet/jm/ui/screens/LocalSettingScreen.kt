@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -18,10 +19,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.Api
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Block
@@ -74,7 +79,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.drawBehind
@@ -84,16 +88,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import kotlin.math.roundToInt
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_BUILTIN
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_MIXED
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_NETWORK
 import com.par9uet.jm.data.models.CACHE_INTEGRITY_CHECK_FULL
 import com.par9uet.jm.data.models.CACHE_INTEGRITY_CHECK_OFF
 import com.par9uet.jm.data.models.CACHE_INTEGRITY_CHECK_PARTIAL
+import com.par9uet.jm.data.models.COVER_CACHE_MAX_DURATION_HOURS
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
 import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.store.LocalSettingManager
+import com.par9uet.jm.ui.components.SearchExclusionEditor
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
@@ -110,8 +118,6 @@ import com.par9uet.jm.worker.CACHE_MIGRATION_TARGET_URI
 import com.par9uet.jm.worker.CACHE_MIGRATION_WORK_NAME
 import com.par9uet.jm.cache.ensureDownloadTreeHiddenFromGallery
 import com.par9uet.jm.worker.CacheMigrationWorker
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 private sealed class SettingType {
     object ComicApiSource : SettingType()
@@ -125,6 +131,7 @@ private sealed class SettingType {
     object NotificationManagement : SettingType()
     object RecommendSource : SettingType()
     object AllGridColumns : SettingType()
+    object CoverCacheDuration : SettingType()
     object ReadDecodeConcurrency : SettingType()
     object CacheIntegrityCheck : SettingType()
 }
@@ -148,6 +155,14 @@ private val comicApiSourceTextMap = mapOf(
 private fun gridColumnsText(columns: Int): String =
     if (columns == 0) "\u81ea\u9002\u5e94" else "$columns \u5217"
 
+private fun coverCacheDurationText(hours: Int): String = when (hours.coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS)) {
+    0 -> "不缓存"
+    24 -> "1 天"
+    48 -> "2 天"
+    72 -> "3 天"
+    else -> "$hours 小时"
+}
+
 @Composable
 fun LocalSettingScreen(
     localSettingManager: LocalSettingManager = getKoin().get(),
@@ -161,7 +176,6 @@ fun LocalSettingScreen(
     var isOpenSettingSelectDialog by remember { mutableStateOf(false) }
     var showHomeExcludedTagsDialog by remember { mutableStateOf(false) }
     var showCachePathDialog by remember { mutableStateOf(false) }
-    val cachePathScope = rememberCoroutineScope()
     val workManager = remember(context) { WorkManager.getInstance(context) }
     var migrationWorkList by remember { mutableStateOf<List<WorkInfo>>(emptyList()) }
     DisposableEffect(workManager) {
@@ -193,9 +207,7 @@ fun LocalSettingScreen(
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
             runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
             val treeUri = uri.toString()
-            cachePathScope.launch(Dispatchers.IO) {
-                ensureDownloadTreeHiddenFromGallery(context, treeUri)
-            }
+            ensureDownloadTreeHiddenFromGallery(context, treeUri)
             startCacheMigration(treeUri)
         }
     }
@@ -260,6 +272,12 @@ fun LocalSettingScreen(
                         title = "\u526a\u5207\u677f\u81ea\u52a8\u68c0\u6d4b",
                         value = localSetting.clipboardAutoDetectEnabled,
                         onCheckedChange = localSettingManager::updateClipboardAutoDetectEnabled
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.EventAvailable,
+                        title = "开屏加载动画",
+                        value = localSetting.splashLoadingEnabled,
+                        onCheckedChange = localSettingManager::updateSplashLoadingEnabled
                     )
                     SettingsRow(
                         Icons.Rounded.GridView,
@@ -355,8 +373,39 @@ fun LocalSettingScreen(
                     ) {
                         openSetting(SettingType.ReadTapMode)
                     }
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.Image,
+                        title = "作者显示漫画编号",
+                        value = localSetting.showComicIdAsSubtitle,
+                        onCheckedChange = localSettingManager::updateShowComicIdAsSubtitle
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.AutoMirrored.Rounded.MenuBook,
+                        title = "漫画阅读记忆",
+                        value = localSetting.comicReadingMemoryEnabled,
+                        onCheckedChange = localSettingManager::updateComicReadingMemoryEnabled
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.History,
+                        title = "章节阅读记忆",
+                        value = localSetting.chapterReadingMemoryEnabled,
+                        onCheckedChange = localSettingManager::updateChapterReadingMemoryEnabled
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.AutoMirrored.Rounded.VolumeUp,
+                        title = "音量键翻页",
+                        value = localSetting.volumeKeyPageTurningEnabled,
+                        onCheckedChange = localSettingManager::updateVolumeKeyPageTurningEnabled
+                    )
                     SettingsRow(
-                        Icons.Rounded.Memory,
+                        icon = Icons.Rounded.Image,
+                        title = "封面缓存时长",
+                        value = coverCacheDurationText(localSetting.coverCacheDurationHours),
+                    ) {
+                        openSetting(SettingType.CoverCacheDuration)
+                    }
+                    SettingsRow(
+                        Icons.Rounded.Download,
                         "缓存检查",
                         cacheIntegrityCheckText(localSetting.cacheIntegrityCheckMode),
                     ) {
@@ -443,18 +492,23 @@ fun LocalSettingScreen(
         if (showHomeExcludedTagsDialog) {
             HomeExcludedTagsDialog(
                 tags = localSetting.homeExcludedTags,
+                templates = localSetting.blockedTagTemplateList,
                 onConfirm = { tags ->
                     localSettingManager.updateHomeExcludedTags(tags)
                     showHomeExcludedTagsDialog = false
                 },
-                onDismiss = { showHomeExcludedTagsDialog = false }
+                onDismiss = { showHomeExcludedTagsDialog = false },
+                onOpenTemplateSettings = {
+                    showHomeExcludedTagsDialog = false
+                    mainNavController.navigate("blockedTags")
+                }
             )
         }
         if (showCachePathDialog) {
             AlertDialog(
                 onDismissRequest = { showCachePathDialog = false },
                 title = { Text("\u7f13\u5b58\u8def\u5f84") },
-                text = { Text("选择新位置后会迁移已有漫画缓存。应用会在自定义目录写入 .nomedia，避免缓存图片进入系统相册。迁移完成前继续使用原路径，可切换到后台并通过通知查看进度。") },
+                text = { Text("选择新位置后会迁移已有漫画缓存。迁移完成前继续使用原路径，可切换到后台并通过通知查看进度。") },
                 confirmButton = {
                     TextButton(onClick = {
                         showCachePathDialog = false
@@ -524,6 +578,14 @@ private fun SettingSelectDialogContent(
                 onDismiss()
             },
             onDismiss = onDismiss
+        )
+        return
+    }
+    if (settingType is SettingType.CoverCacheDuration) {
+        CoverCacheDurationSliderDialog(
+            initialHours = localSetting.coverCacheDurationHours,
+            onConfirm = { localSettingManager.updateCoverCacheDurationHours(it) },
+            onDismiss = onDismiss,
         )
         return
     }
@@ -626,6 +688,7 @@ private fun SettingSelectDialogContent(
             is SettingType.RecommendSource -> recommendSourceOptionList
             is SettingType.ReadDecodeConcurrency -> readDecodeConcurrencyOptionList
             is SettingType.CacheIntegrityCheck -> cacheIntegrityCheckOptionList
+            is SettingType.AllGridColumns, is SettingType.CoverCacheDuration -> emptyList()
         },
         onSelect = {
             var shouldDismiss = true
@@ -654,6 +717,7 @@ private fun SettingSelectDialogContent(
                 is SettingType.RecommendSource -> localSettingManager.updateRecommendSource(it)
                 is SettingType.ReadDecodeConcurrency -> localSettingManager.updateReadDecodeConcurrency(it.toIntOrNull() ?: 2)
                 is SettingType.CacheIntegrityCheck -> localSettingManager.updateCacheIntegrityCheckMode(it)
+                is SettingType.AllGridColumns, is SettingType.CoverCacheDuration -> Unit
             }
             if (shouldDismiss) onDismiss()
         },
@@ -729,18 +793,60 @@ private fun AllGridColumnSliderDialog(
             }
             Slider(
                 value = value,
-                onValueChange = onChange,
+                onValueChange = { onChange(it.roundToInt().coerceIn(0, 6).toFloat()) },
                 valueRange = 0f..6f,
                 steps = 5,
             )
+            InputChip(
+                selected = value.toInt() == 0,
+                onClick = { onChange(0f) },
+                label = { Text("自适应") },
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                (1..6).forEach { option ->
+                    val selected = value.toInt() == option
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        },
+                        contentColor = if (selected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        onClick = { onChange(option.toFloat()) },
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(option.toString(), style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
         }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .widthIn(max = 560.dp),
         title = { Text("网格列数") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text(
                     "拖动滑块设置各页面每行显示的漫画数量，0 = 自适应",
                     style = MaterialTheme.typography.bodySmall,
@@ -764,72 +870,104 @@ private fun AllGridColumnSliderDialog(
     )
 }
 
+@Composable
+private fun CoverCacheDurationSliderDialog(
+    initialHours: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var durationHours by remember(initialHours) {
+        mutableStateOf(initialHours.coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS).toFloat())
+    }
+    val selectedHours = durationHours.roundToInt().coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .widthIn(max = 560.dp),
+        title = { Text("封面缓存时长") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "设置漫画封面重复使用的最长时长。选择不缓存时，每次展示都会重新请求封面。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("当前设置", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        text = coverCacheDurationText(selectedHours),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Slider(
+                    value = durationHours,
+                    onValueChange = {
+                        durationHours = it.roundToInt()
+                            .coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS)
+                            .toFloat()
+                    },
+                    valueRange = 0f..COVER_CACHE_MAX_DURATION_HOURS.toFloat(),
+                    steps = COVER_CACHE_MAX_DURATION_HOURS - 1,
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("不缓存", style = MaterialTheme.typography.labelSmall)
+                    Text("1 天", style = MaterialTheme.typography.labelSmall)
+                    Text("2 天", style = MaterialTheme.typography.labelSmall)
+                    Text("3 天", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(selectedHours); onDismiss() }) { Text("确定") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HomeExcludedTagsDialog(
     tags: List<String>,
+    templates: List<com.par9uet.jm.data.models.BlockedTagTemplate>,
     onConfirm: (List<String>) -> Unit,
     onDismiss: () -> Unit,
+    onOpenTemplateSettings: () -> Unit,
 ) {
-    var text by remember { mutableStateOf("") }
     var currentTags by remember { mutableStateOf(tags) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("首页标签排除") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "添加标签后，首页推荐将不再显示包含这些标签的漫画",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    label = { Text("输入标签名") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    trailingIcon = {
-                        IconButton(
-                            onClick = {
-                                val trimmed = text.trim()
-                                if (trimmed.isNotEmpty() && trimmed !in currentTags) {
-                                    currentTags = currentTags + trimmed
-                                    text = ""
-                                }
-                            }
-                        ) {
-                            Icon(Icons.Rounded.Add, contentDescription = "添加")
-                        }
+            SearchExclusionEditor(
+                excludedTags = currentTags,
+                templates = templates,
+                onAddTag = { tag ->
+                    if (currentTags.none { it.equals(tag, ignoreCase = true) }) currentTags += tag.trim()
+                },
+                onRemoveTag = { tag -> currentTags = currentTags.filterNot { it.equals(tag, ignoreCase = true) } },
+                onClearTags = { currentTags = emptyList() },
+                onApplyTemplate = { template ->
+                    template.tagList.forEach { tag ->
+                        if (currentTags.none { it.equals(tag, ignoreCase = true) }) currentTags += tag
                     }
-                )
-                if (currentTags.isNotEmpty()) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        currentTags.forEach { tag ->
-                            InputChip(
-                                label = { Text(tag) },
-                                selected = false,
-                                onClick = {},
-                                trailingIcon = {
-                                    Icon(
-                                        Icons.Rounded.Close,
-                                        contentDescription = "删除",
-                                        modifier = Modifier
-                                            .size(16.dp)
-                                            .clickable {
-                                                currentTags = currentTags - tag
-                                            }
-                                    )
-                                }
-                            )
-                        }
-                    }
-                }
-            }
+                },
+                onOpenTemplateSettings = onOpenTemplateSettings,
+            )
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(currentTags) }) { Text("确定") }
@@ -1008,6 +1146,7 @@ private fun settingTitle(type: SettingType): String {
         is SettingType.NotificationManagement -> "\u901a\u77e5\u7ba1\u7406"
         is SettingType.RecommendSource -> "\u63a8\u8350\u6e90"
         is SettingType.AllGridColumns -> "\u7f51\u683c\u5217\u6570"
+        is SettingType.CoverCacheDuration -> "封面缓存时长"
         is SettingType.ReadDecodeConcurrency -> "\u5e76\u53d1\u89e3\u7801\u6570"
         is SettingType.CacheIntegrityCheck -> "缓存检查"
     }
@@ -1030,6 +1169,7 @@ private fun settingValue(type: SettingType, localSetting: LocalSetting): String 
         }
         is SettingType.RecommendSource -> localSetting.recommendSource
         is SettingType.AllGridColumns -> ""
+        is SettingType.CoverCacheDuration -> ""
         is SettingType.ReadDecodeConcurrency -> "${localSetting.readDecodeConcurrency}"
         is SettingType.CacheIntegrityCheck -> localSetting.cacheIntegrityCheckMode
     }

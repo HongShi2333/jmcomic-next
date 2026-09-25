@@ -3,12 +3,14 @@ package com.par9uet.jm.repository
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.par9uet.jm.data.models.AiChatModel
 import com.par9uet.jm.data.models.AiSearchEngine
 import com.par9uet.jm.data.models.AiSearchEngineProvider
 import com.par9uet.jm.data.models.AiSearchSettings
 import com.par9uet.jm.network.DohManager
 import com.par9uet.jm.utils.applyTlsCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -65,6 +67,10 @@ class AiChatRepository(
         private const val TARGET_API = "https://app.unlimitedai.chat/api/chat"
         private const val DEVICE_ID = ""
         private const val COOKIES = ""
+        private const val NOTRACK_BASE = "https://notrack.ai"
+        private const val NOTRACK_CHAT_PAGE = "$NOTRACK_BASE/zh-CN/chat"
+        private const val NOTRACK_DISPATCH = "$NOTRACK_BASE/api/dispatch"
+        private const val NOTRACK_MODEL = "C"
         const val THINK_OPEN = "\u003Cthink\u003E"
         const val THINK_CLOSE = "\u003C/think\u003E"
 
@@ -106,6 +112,9 @@ class AiChatRepository(
         .dns(dohManager)
         .applyTlsCompat()
         .build()
+
+    @Volatile
+    private var noTrackCookie: String = ""
 
     /**
      * 判断用户消息是否应该触发联网搜索（AI 自主决策）。
@@ -421,9 +430,25 @@ class AiChatRepository(
     // ============== AI 流式对话 ==============
 
     suspend fun streamChat(
+        model: String = AiChatModel.UnlimitedAi.id,
         messages: List<OpenAiChatMessage>,
         onDelta: suspend (String) -> Unit
     ) = withContext(Dispatchers.IO) {
+        when (AiChatModel.fromId(model)) {
+            AiChatModel.UnlimitedAi -> try {
+                streamUnlimitedChat(messages, onDelta)
+            } catch (_: AiRateLimitedException) {
+                // 限流时自动切换到匿名备用模型，避免伪造或随机生成鉴权数据。
+                streamNoTrackChat(messages, onDelta)
+            }
+            AiChatModel.NoTrackAi -> streamNoTrackChat(messages, onDelta)
+        }
+    }
+
+    private suspend fun streamUnlimitedChat(
+        messages: List<OpenAiChatMessage>,
+        onDelta: suspend (String) -> Unit
+    ) {
         val body = gson.toJson(toUpstreamPayload(messages))
             .toRequestBody("application/json; charset=utf-8".toMediaType())
 
@@ -445,7 +470,18 @@ class AiChatRepository(
             .post(body)
             .build()
 
-        client.newCall(request).execute().use { response ->
+        for (attempt in 0 until 3) {
+            val response = client.newCall(request).execute()
+            if (response.code == 429) {
+                response.close()
+                if (attempt < 2) {
+                    delay(1_000L shl attempt)
+                    continue
+                }
+                throw AiRateLimitedException()
+            }
+
+            response.use { response ->
             val responseBody = response.body ?: throw IllegalStateException("AI 服务返回空响应")
             if (!response.isSuccessful) {
                 val message = responseBody.string().ifBlank { "HTTP ${response.code}" }
@@ -492,7 +528,184 @@ class AiChatRepository(
             if (inReasoning) {
                 onDelta(THINK_CLOSE)
             }
+            }
+            return
         }
+    }
+
+    /**
+     * 直接调用 NoTrack 的匿名聊天接口。Cookie 只从聊天页的 Set-Cookie 中读取，
+     * 不生成、不伪造鉴权数据；401/403 时丢弃旧 uid 并重新获取一次。
+     */
+    private fun toNoTrackInput(messages: List<OpenAiChatMessage>): String {
+        val validMessages = messages.filter { it.content.isNotBlank() }
+        if (validMessages.isEmpty()) return ""
+        if (validMessages.size == 1 && validMessages.first().role == "user") {
+            return validMessages.first().content.take(3_800)
+        }
+
+        val systemText = validMessages
+            .filter { it.role == "system" }
+            .joinToString("\n\n") { it.content.trim() }
+        val latestUser = validMessages.lastOrNull { it.role == "user" }
+        val latestUserLine = latestUser?.let { "[User]\n${it.content.trim()}" }.orEmpty()
+        val recentMessages = validMessages
+            .filter { it.role != "system" && it !== latestUser }
+            .asReversed()
+        val selectedRecent = mutableListOf<String>()
+        var remaining = 3_800 - systemText.length - latestUserLine.length - 8
+        for (message in recentMessages) {
+            if (remaining <= 100) break
+            val role = message.role.replaceFirstChar { it.uppercase() }
+            val line = "[$role]\n${message.content.trim()}"
+            if (line.length > remaining) break
+            selectedRecent.add(0, line)
+            remaining -= line.length + 4
+        }
+
+        val parts = buildList {
+            if (systemText.isNotBlank()) add("[System]\n$systemText")
+            addAll(selectedRecent)
+            if (latestUserLine.isNotBlank()) add(latestUserLine)
+        }
+        return parts.joinToString("\n\n").take(3_800)
+    }
+
+    private suspend fun streamNoTrackChat(
+        messages: List<OpenAiChatMessage>,
+        onDelta: suspend (String) -> Unit
+    ) {
+        val payload = mapOf<String, Any?>(
+            "user_input" to toNoTrackInput(messages),
+            "mode" to "usual",
+            "model" to NOTRACK_MODEL,
+            "persona" to "normal",
+            "max_turns" to 6,
+            "chat_id" to null,
+            "attachments" to emptyList<Any>(),
+            "regenerate" to false,
+            "edit" to false,
+            "edit_mid" to null
+        )
+        val body = gson.toJson(payload)
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+        for (attempt in 0 until 2) {
+            if (noTrackCookie.isBlank()) {
+                refreshNoTrackCookie()
+            }
+            val requestBuilder = Request.Builder()
+                .url(NOTRACK_DISPATCH)
+                .header("accept", "text/event-stream")
+                .header("content-type", "application/json")
+                .header("origin", NOTRACK_BASE)
+                .header("referer", NOTRACK_CHAT_PAGE)
+                .header(
+                    "user-agent",
+                    "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome Mobile Safari/537.36"
+                )
+                .post(body)
+            if (noTrackCookie.isNotBlank()) {
+                requestBuilder.header("cookie", noTrackCookie)
+            }
+
+            val response = client.newCall(requestBuilder.build()).execute()
+            if (response.code == 401 || response.code == 403) {
+                response.close()
+                noTrackCookie = ""
+                if (attempt == 0) continue
+                throw IllegalStateException("NoTrack AI 身份已失效，请稍后重试")
+            }
+
+            response.use { response ->
+                val responseBody = response.body ?: throw IllegalStateException("NoTrack AI 返回空响应")
+                if (!response.isSuccessful) {
+                    val message = responseBody.string().ifBlank { "HTTP ${response.code}" }
+                    throw IllegalStateException("NoTrack AI 请求失败：$message")
+                }
+
+                val source = responseBody.source()
+                var inReasoning = false
+                var emittedContent = false
+                while (!source.exhausted()) {
+                    val line = source.readUtf8Line() ?: continue
+                    val raw = line.trim()
+                    if (raw.isBlank() || raw.startsWith(":")) continue
+                    val data = when {
+                        raw.startsWith("data:") -> raw.substringAfter("data:").trim()
+                        raw.startsWith("{") -> raw
+                        else -> continue
+                    }
+                    if (data.isBlank() || data == "[DONE]") continue
+                    val json = runCatching { JsonParser.parseString(data).asJsonObject }.getOrNull()
+                        ?: continue
+                    if (json.has("error")) {
+                        val message = json.getAsJsonObject("error")
+                            ?.get("message")
+                            ?.asString
+                            ?: "NoTrack AI 返回错误"
+                        throw IllegalStateException(message)
+                    }
+
+                    val type = json.stringValue("type").orEmpty()
+                    if (type.equals("done", ignoreCase = true)) break
+                    if (type.equals("chat_meta", ignoreCase = true) ||
+                        type.equals("user", ignoreCase = true)
+                    ) continue
+                    val isReasoning = type.contains("thinking", ignoreCase = true) ||
+                        type.contains("reason", ignoreCase = true)
+                    if (isReasoning && !inReasoning) {
+                        onDelta(THINK_OPEN)
+                        inReasoning = true
+                    } else if (!isReasoning && inReasoning) {
+                        onDelta(THINK_CLOSE)
+                        inReasoning = false
+                    }
+
+                    val choices = json.getAsJsonArray("choices")
+                    val choiceDelta = if (choices != null && choices.size() > 0 && choices[0].isJsonObject) {
+                        choices[0].asJsonObject.getAsJsonObject("delta")
+                            ?.stringValue("content", "text")
+                            .orEmpty()
+                    } else {
+                        ""
+                    }
+                    val delta = json.stringValue("chunk", "delta", "content", "text")
+                        .orEmpty()
+                        .ifBlank { choiceDelta }
+                    if (delta.isNotEmpty() && (type != "message" || !emittedContent)) {
+                        onDelta(delta)
+                        emittedContent = true
+                    }
+                }
+                if (inReasoning) onDelta(THINK_CLOSE)
+            }
+            return
+        }
+        throw IllegalStateException("NoTrack AI 身份已失效，请稍后重试")
+    }
+
+    private fun refreshNoTrackCookie() {
+        val request = Request.Builder()
+            .url(NOTRACK_CHAT_PAGE)
+            .header("accept", "text/html,application/xhtml+xml")
+            .header(
+                "user-agent",
+                "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome Mobile Safari/537.36"
+            )
+            .get()
+            .build()
+        noTrackCookie = runCatching {
+            searchClient.newCall(request).execute().use { response ->
+                val cookies = response.headers.values("Set-Cookie").joinToString(";")
+                Regex("uid=([a-f0-9-]+)", RegexOption.IGNORE_CASE)
+                    .find(cookies)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.let { "uid=$it" }
+                    .orEmpty()
+            }
+        }.getOrDefault("")
     }
 
     private fun toUpstreamPayload(messages: List<OpenAiChatMessage>): Map<String, Any?> {
@@ -522,6 +735,8 @@ class AiChatRepository(
         )
     }
 }
+
+private class AiRateLimitedException : IllegalStateException("Unlimited AI 当前触发限流")
 
 data class OpenAiChatMessage(
     val role: String,

@@ -2,6 +2,7 @@ package com.par9uet.jm.ui.viewModel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.par9uet.jm.data.models.AiChatModel
 import com.par9uet.jm.data.models.AiChatConversation
 import com.par9uet.jm.data.models.AiChatMessage
 import com.par9uet.jm.data.models.AiChatMessageBranch
@@ -13,6 +14,7 @@ import com.par9uet.jm.repository.SearchProgress
 import com.par9uet.jm.repository.WebSearchResult
 import com.par9uet.jm.storage.AiChatStorage
 import com.par9uet.jm.storage.PersonaStorage
+import com.par9uet.jm.store.LocalSettingManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,7 +30,8 @@ import java.util.UUID
 class AiChatViewModel(
     private val aiChatRepository: AiChatRepository,
     private val aiChatStorage: AiChatStorage,
-    private val personaStorage: PersonaStorage
+    private val personaStorage: PersonaStorage,
+    private val localSettingManager: LocalSettingManager
 ) : ViewModel() {
     enum class RetryMode {
         Regenerate,
@@ -469,7 +472,10 @@ class AiChatViewModel(
                     deepThinkingEnabled = deepThinkingEnabled,
                     persona = persona
                 )
-                aiChatRepository.streamChat(messages = requestMessages) { delta ->
+                aiChatRepository.streamChat(
+                    model = localSettingManager.localSettingState.value.aiModel,
+                    messages = requestMessages
+                ) { delta ->
                     appendAssistantDelta(conversationId, assistantMessageId, delta)
                 }
                 markAssistantFinished(conversationId, assistantMessageId, assistantStartedAt)

@@ -8,17 +8,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -36,8 +34,9 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import org.koin.androidx.compose.koinViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(FlowPreview::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -51,21 +50,20 @@ fun ComicScrollRead(
     onUpdateSliderValue: (value: Float) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var currentIndexState by comicReadViewModel.currentIndexState
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
     val localSetting by localSettingManager.localSettingState.collectAsState()
     val list = comicPicState.data ?: listOf()
     val context = LocalContext.current
-    var programmaticScroll by remember { mutableStateOf(false) }
+    val latestOnUpdateSliderValue = rememberUpdatedState(onUpdateSliderValue)
 
     fun scrollToCurrentPage() {
         if (list.isEmpty()) return
-        val target = currentIndexState.coerceIn(0, list.lastIndex)
-        currentIndexState = target
+        val target = comicReadViewModel.currentIndexState.intValue
+            .coerceIn(0, list.lastIndex)
         coroutineScope.launch {
             lazyListState.scrollToItem(target)
             pagerState.scrollToPage(target)
-            onUpdateSliderValue(target.toFloat())
+            latestOnUpdateSliderValue.value(target.toFloat())
         }
     }
 
@@ -73,10 +71,8 @@ fun ComicScrollRead(
         if (list.isEmpty()) return@LaunchedEffect
         val target = targetIndex.coerceIn(0, list.lastIndex)
         if (lazyListState.firstVisibleItemIndex != target) {
-            programmaticScroll = true
             lazyListState.scrollToItem(target)
             pagerState.scrollToPage(target)
-            programmaticScroll = false
         }
     }
 
@@ -102,17 +98,20 @@ fun ComicScrollRead(
                 }
         }
         launch {
-            snapshotFlow { lazyListState.firstVisibleItemIndex }
+            snapshotFlow {
+                // Read both values so Compose emits while the current item is moving
+                // and when the next manga page becomes the first visible item.
+                lazyListState.firstVisibleItemIndex to
+                    lazyListState.firstVisibleItemScrollOffset
+            }
+                .map { (index, _) -> index }
                 .distinctUntilChanged()
-                .debounce(150)
-                .collect {
-                    if (programmaticScroll) return@collect
-                    log("lazyListState.firstVisibleItemIndex currentIndexState = $currentIndexState it = $it")
-                    if (currentIndexState != it) {
-                        currentIndexState = it
-                        onUpdateSliderValue(it.toFloat())
-                        comicReadViewModel.decodeIndex(currentIndexState, context)
-                    }
+                .collect { visibleIndex ->
+                    val pageIndex = visibleIndex.coerceIn(0, list.lastIndex)
+                    log("visible page index currentIndexState = ${comicReadViewModel.currentIndexState.intValue} it = $pageIndex")
+                    // The parent owns the observable page state used by ToolsBar.
+                    latestOnUpdateSliderValue.value(pageIndex.toFloat())
+                    comicReadViewModel.decodeIndex(pageIndex, context)
                 }
         }
     }
@@ -179,25 +178,24 @@ fun ComicScrollRead(
                 .fillMaxSize()
                 .readerZoomable(zoomState, enableVerticalPan = false)
         ) {
-            items(list, key = {
-                "${it.comicId}_${it.originSrc}"
-            }) {
-                ComicPicImage(
-                    comicPicImageState = it,
+            itemsIndexed(list, key = { _, item ->
+                "${item.comicId}_${item.originSrc}"
+            }) { page, item ->
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(
-                            when (val state = it.imageResultState) {
-                                is ImageResultState.Success -> {
-                                    state.decodeImageAspectRatio
-                                }
-
-                                else -> {
-                                    9f / 16
-                                }
+                            when (val state = item.imageResultState) {
+                                is ImageResultState.Success -> state.decodeImageAspectRatio
+                                else -> 9f / 16
                             }
                         )
-                )
+                ) {
+                    ComicPicImage(
+                        comicPicImageState = item,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }

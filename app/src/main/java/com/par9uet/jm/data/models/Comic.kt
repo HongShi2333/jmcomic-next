@@ -29,6 +29,8 @@ data class Comic(
     val price: Int,
     // 是否购买
     val isBuy: Boolean = false,
+    // 收藏筛选中的漫画类型（主分类 + 子分类）
+    val typeList: List<String> = listOf(),
 ) {
     companion object {
         fun create(
