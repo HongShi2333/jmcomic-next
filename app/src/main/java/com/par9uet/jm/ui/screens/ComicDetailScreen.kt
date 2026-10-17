@@ -85,6 +85,7 @@ import com.par9uet.jm.store.ReadHistoryManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.ComicCoverImage
+import com.par9uet.jm.ui.components.toDisplayText
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.utils.shimmer
 import org.koin.compose.getKoin
@@ -206,7 +207,7 @@ private fun ComicHeaderInfo(
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = comic.name,
+            text = comic.name.toDisplayText(),
             style = MaterialTheme.typography.headlineSmall,
             lineHeight = 1.25.em,
             fontWeight = FontWeight.Bold,
@@ -220,7 +221,7 @@ private fun ComicHeaderInfo(
                     key(author) {
                         AssistChip(
                             onClick = { onTagSearch(author) },
-                            label = { Text(author, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = { Text(author.toDisplayText(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             colors = AssistChipDefaults.assistChipColors(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                                 labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -288,7 +289,7 @@ private fun ComicDetailTag(
         ),
         label = {
             Text(
-                text = label,
+                text = label.toDisplayText(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -343,7 +344,7 @@ private fun ComicDescriptionCard(comic: Comic) {
         ) {
             Text("简介", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                text = comic.description,
+                text = comic.description.toDisplayText(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -469,7 +470,7 @@ private fun ComicChapterDirectoryCard(
                                 modifier = Modifier.width(28.dp),
                             )
                             Text(
-                                text = chapter.name.ifBlank { "第 ${index + 1} 章" },
+                                text = chapter.name.toDisplayText().ifBlank { "第 ${index + 1} 章" },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f),
@@ -588,7 +589,7 @@ fun ComicDetailScreen(
                 },
                 title = {
                     Text(
-                        text = comicTitle,
+                        text = comicTitle.toDisplayText(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium,
@@ -846,7 +847,7 @@ private fun FolderPickerSheet(
                                 modifier = Modifier.padding(9.dp),
                             )
                         }
-                        Text(entry.value, modifier = Modifier.weight(1f).padding(horizontal = 12.dp), style = MaterialTheme.typography.bodyLarge)
+                        Text(entry.value.toDisplayText(), modifier = Modifier.weight(1f).padding(horizontal = 12.dp), style = MaterialTheme.typography.bodyLarge)
                         if (selected) Icon(Icons.Rounded.Check, contentDescription = "默认收藏夹", tint = MaterialTheme.colorScheme.primary)
                     }
                 }

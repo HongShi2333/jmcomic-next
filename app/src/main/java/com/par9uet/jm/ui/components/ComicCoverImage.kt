@@ -102,7 +102,7 @@ fun ComicIdChip(
                     Text("加载中…")
                 } else {
                     Text(
-                        text = detailInfoText,
+                        text = detailInfoText.toDisplayText(),
                         fontSize = 11.sp,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -155,7 +155,7 @@ fun ComicCoverImage(
             cacheKey = comicCoverCacheKey(comic.id, localSetting.coverCacheDurationHours),
             cacheEnabled = localSetting.coverCacheDurationHours > 0,
             imageLoader = imageLoader,
-            contentDescription = "${comic.name}的封面",
+            contentDescription = "${comic.name.toDisplayText()}的封面",
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .aspectRatio(3f / 4f)
@@ -208,7 +208,7 @@ fun ComicCoverImage(
                     Text("加载中...")
                 } else {
                     Text(
-                        text = detailInfoText,
+                        text = detailInfoText.toDisplayText(),
                         fontSize = 11.sp,
                         modifier = Modifier
                             .fillMaxWidth()

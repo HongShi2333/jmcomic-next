@@ -107,6 +107,8 @@ import com.par9uet.jm.ui.components.adaptiveDialogMaxHeight
 import com.par9uet.jm.ui.viewModel.UserViewModel
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.UserManager
+import com.par9uet.jm.ui.components.toDisplayText
+import com.par9uet.jm.utils.chineseTextKey
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
@@ -148,7 +150,7 @@ private fun FolderChip(
     FilterChip(
         selected = isSelected,
         onClick = onClick,
-        label = { Text(folderName) },
+        label = { Text(folderName.toDisplayText()) },
         leadingIcon = {
             Icon(
                 imageVector = if (isAll) Icons.Rounded.Bookmarks else Icons.Rounded.Folder,
@@ -666,7 +668,7 @@ fun UserCollectComicScreen(
                                     tint = MaterialTheme.colorScheme.primary
                                 )
                                 Text(
-                                    folderName,
+                                    folderName.toDisplayText(),
                                     style = MaterialTheme.typography.bodyLarge,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -738,7 +740,7 @@ fun UserCollectComicScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = false },
             title = { Text("删除收藏夹") },
-            text = { Text("确定删除「${actionFolderName}」吗？\n注意：删除收藏夹不会删除其中的漫画，漫画会移至「全部」。") },
+            text = { Text("确定删除「${actionFolderName.toDisplayText()}」吗？\n注意：删除收藏夹不会删除其中的漫画，漫画会移至「全部」。") },
             confirmButton = {
                 TextButton(onClick = {
                     val folderId = actionFolderId
@@ -814,21 +816,22 @@ private fun FilterDialog(
 
     // 根据搜索文本过滤当前页内容
     val query = filterQuery.trim()
-    val filteredTagCountMap = remember(tagCountMap, query) {
+    val queryKey = chineseTextKey(query)
+    val filteredTagCountMap = remember(tagCountMap, queryKey) {
         if (query.isBlank()) tagCountMap
-        else tagCountMap.filterKeys { it.contains(query, ignoreCase = true) }
+        else tagCountMap.filterKeys { chineseTextKey(it).contains(queryKey) }
     }
-    val filteredRoleCountMap = remember(roleCountMap, query) {
+    val filteredRoleCountMap = remember(roleCountMap, queryKey) {
         if (query.isBlank()) roleCountMap
-        else roleCountMap.filterKeys { it.contains(query, ignoreCase = true) }
+        else roleCountMap.filterKeys { chineseTextKey(it).contains(queryKey) }
     }
-    val filteredAuthorCountMap = remember(authorCountMap, query) {
+    val filteredAuthorCountMap = remember(authorCountMap, queryKey) {
         if (query.isBlank()) authorCountMap
-        else authorCountMap.filterKeys { it.contains(query, ignoreCase = true) }
+        else authorCountMap.filterKeys { chineseTextKey(it).contains(queryKey) }
     }
-    val filteredTypeCountMap = remember(typeCountMap, query) {
+    val filteredTypeCountMap = remember(typeCountMap, queryKey) {
         if (query.isBlank()) typeCountMap
-        else typeCountMap.filterKeys { it.contains(query, ignoreCase = true) }
+        else typeCountMap.filterKeys { chineseTextKey(it).contains(queryKey) }
     }
 
     ModalBottomSheet(
@@ -990,7 +993,7 @@ private fun FilterDialog(
                                     FilterChip(
                                         selected = tag in draftSelectedTags,
                                         onClick = { onTagToggle(tag) },
-                                        label = { Text("$tag  $count") }
+                                        label = { Text("${tag.toDisplayText()}  $count") }
                                     )
                                 }
                             }
@@ -1031,7 +1034,7 @@ private fun FilterDialog(
                                     FilterChip(
                                         selected = value in selected,
                                         onClick = { onToggle(value) },
-                                        label = { Text("$value  $count") }
+                                        label = { Text("${value.toDisplayText()}  $count") }
                                     )
                                 }
                             }
@@ -1128,7 +1131,7 @@ private fun MoveFolderSheet(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = folderName,
+                                text = folderName.toDisplayText(),
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }

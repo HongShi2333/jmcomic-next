@@ -249,7 +249,7 @@ private fun SelectableChapterCard(
         ) {
             Text(
                 modifier = Modifier.weight(1f),
-                text = title,
+                text = title.toDisplayText(),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal

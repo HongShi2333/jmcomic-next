@@ -46,6 +46,7 @@ import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.ComicCoverImage
+import com.par9uet.jm.ui.components.toDisplayText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.compose.getKoin
@@ -219,7 +220,7 @@ fun ExtractCodeScreen(
                         )
                         // 标题
                         Text(
-                            text = comic.name,
+                            text = comic.name.toDisplayText(),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             maxLines = 2,
@@ -228,7 +229,7 @@ fun ExtractCodeScreen(
                         // 作者
                         if (comic.authorList.isNotEmpty()) {
                             Text(
-                                text = "作者：${comic.authorList.joinToString("、")}",
+                                text = "作者：${comic.authorList.joinToString("、").toDisplayText()}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 2,

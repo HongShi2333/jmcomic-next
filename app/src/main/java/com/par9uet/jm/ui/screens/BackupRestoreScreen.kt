@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.screens
 
+import com.par9uet.jm.ui.components.toDisplayText
+
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -1256,7 +1258,7 @@ private fun ComicRestoreRow(
             // 右侧信息
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = group.name.ifBlank { "未命名漫画" },
+                    text = group.name.toDisplayText().ifBlank { "未命名漫画" },
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = contentColor,

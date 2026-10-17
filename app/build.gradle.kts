@@ -127,6 +127,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.okhttp)
     implementation(libs.gson)
+    implementation("com.github.houbb:opencc4j:1.14.0")
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.coil.compose)
     implementation(libs.retrofit)

@@ -10,7 +10,7 @@ fun normalizeBlockedTag(value: String): String {
 fun normalizeBlockedTagList(tags: List<String>): List<String> {
     return tags.map(::normalizeBlockedTag)
         .filter { it.isNotBlank() }
-        .distinctBy { it.lowercase() }
+        .distinctBy(::chineseTextKey)
 }
 
 fun normalizeBlockedTagTemplates(templates: List<BlockedTagTemplate>): List<BlockedTagTemplate> {
@@ -31,9 +31,9 @@ fun flattenBlockedTagTemplates(templates: List<BlockedTagTemplate>): List<String
 fun Comic.isBlockedByTags(blockedTags: List<String>): Boolean {
     val normalizedBlockedTags = normalizeBlockedTagList(blockedTags)
     if (normalizedBlockedTags.isEmpty()) return false
-    val blockedSet = normalizedBlockedTags.map { it.lowercase() }.toSet()
+    val blockedSet = normalizedBlockedTags.map(::chineseTextKey).toSet()
     return (tagList + roleList + workList)
-        .map { it.trim().lowercase() }
+        .map(::chineseTextKey)
         .any { it in blockedSet }
 }
 

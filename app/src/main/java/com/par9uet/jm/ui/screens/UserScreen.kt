@@ -58,6 +58,7 @@ import com.par9uet.jm.data.models.User
 import com.par9uet.jm.store.RemoteSettingManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.viewModel.UserViewModel
+import com.par9uet.jm.ui.components.toDisplayText
 import kotlinx.coroutines.launch
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -190,7 +191,7 @@ private fun UserHeader(
                 }
                 AsyncImage(
                     model = avatarModel,
-                    contentDescription = "${user.username}的头像",
+                    contentDescription = "${user.username.toDisplayText()}的头像",
                     modifier = Modifier
                         .size(76.dp)
                         .clip(CircleShape)
@@ -201,14 +202,14 @@ private fun UserHeader(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = user.username,
+                        text = user.username.toDisplayText(),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "Lv.${user.level} ${user.levelName}",
+                        text = "Lv.${user.level} ${user.levelName.toDisplayText()}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

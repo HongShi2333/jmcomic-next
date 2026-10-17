@@ -60,6 +60,7 @@ import com.par9uet.jm.ui.state.rememberTabIndexState
 import com.par9uet.jm.ui.viewModel.ComicViewModel
 import com.par9uet.jm.ui.viewModel.UserViewModel
 import com.par9uet.jm.utils.filterBlockedTags
+import com.par9uet.jm.ui.components.toDisplayText
 import coil.ImageLoader
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -321,7 +322,7 @@ private fun HomeHeader(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = categoryTitle.ifBlank { TEXT_FEATURED },
+                        text = categoryTitle.toDisplayText().ifBlank { TEXT_FEATURED },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
                         maxLines = 1,
@@ -455,7 +456,7 @@ private fun CategoryChipItem(
     ) {
         Text(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            text = title,
+            text = title.toDisplayText(),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,

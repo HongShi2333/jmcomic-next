@@ -27,6 +27,7 @@ import com.par9uet.jm.ui.components.FilterItem
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
+import com.par9uet.jm.ui.components.toDisplayText
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.models.CommonUIState
 import com.par9uet.jm.ui.pagingSource.WeekFilter
@@ -41,14 +42,11 @@ private fun ComicWeekCategorySelect(
     comicViewModel: ComicViewModel = koinActivityViewModel(),
 ) {
     var showSelectDialog by remember { mutableStateOf(false) }
-    val weekCategoryOptionList by remember(weekDataState) {
-        derivedStateOf {
-            val list = weekDataState.data?.categoryList ?: listOf()
-            list.map { SelectOption(label = it.second, value = it.first) }
-        }
+    val weekCategoryOptionList = weekDataState.data?.categoryList.orEmpty().map {
+        SelectOption(label = it.second.toDisplayText(), value = it.first)
     }
     FilterItem(
-        label = category.second,
+        label = category.second.toDisplayText(),
         onClick = {
             showSelectDialog = true
         },
@@ -107,7 +105,7 @@ fun ComicWeekRecommendScreen(
                         typeList.forEach { item ->
                             key(item.first) {
                                 FilterItem(
-                                    label = item.second,
+                                    label = item.second.toDisplayText(),
                                     onClick = {
                                         comicViewModel.changeWeekTypeFilter(item.first)
                                     },

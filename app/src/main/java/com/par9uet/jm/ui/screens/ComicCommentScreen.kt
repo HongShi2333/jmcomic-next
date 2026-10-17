@@ -71,6 +71,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.data.models.Comment
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.components.Comment
+import com.par9uet.jm.ui.components.toDisplayText
 import com.par9uet.jm.ui.components.CommentSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
@@ -98,6 +99,8 @@ private fun ReplyComment(
     comment: Comment,
     onReply: () -> Unit,
 ) {
+    val username = comment.username.toDisplayText()
+    val content = AnnotatedString.fromHtml(htmlString = comment.content).toDisplayText()
     val annotatedString = buildAnnotatedString {
         withStyle(
             style = SpanStyle(
@@ -105,10 +108,10 @@ private fun ReplyComment(
                 color = MaterialTheme.colorScheme.primary
             )
         ) {
-            append(comment.username)
+            append(username)
         }
         append(": ")
-        append(AnnotatedString.fromHtml(htmlString = comment.content).trim())
+        append(content.trim())
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -128,7 +131,7 @@ private fun ReplyComment(
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.Reply,
-                contentDescription = "回复 ${comment.username}",
+                contentDescription = "回复 $username",
                 modifier = Modifier.size(14.dp)
             )
             Spacer(modifier = Modifier.width(3.dp))
@@ -295,7 +298,7 @@ fun ComicCommentArea(
         }
         // 标题：优先显示漫画标题，否则显示"评论"
         val comicTitle = comicDetailState.data?.let { "${it.name} · JM${it.id}" } ?: "评论"
-        CommonScaffold(title = comicTitle, bottomBar = inputBar) {
+        CommonScaffold(title = comicTitle.toDisplayText(), bottomBar = inputBar) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -492,7 +495,7 @@ private fun CommentInputBar(
                             text = if (replyComment == null) {
                                 "\u53d1\u8868\u8bc4\u8bba"
                             } else {
-                                "\u56de\u590d ${replyComment.username}"
+                                "\u56de\u590d ${replyComment.username.toDisplayText()}"
                             }
                         )
                     },

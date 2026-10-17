@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.screens.readScreen
 
+import com.par9uet.jm.ui.components.toDisplayText
+
 import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -539,7 +541,7 @@ private fun ChapterCachePickerDialog(
                                     }
                                 )
                                 Text(
-                                    text = chapter.name.ifBlank { "第 ${index + 1} 章" },
+                                    text = chapter.name.toDisplayText().ifBlank { "第 ${index + 1} 章" },
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -781,7 +783,7 @@ private fun ChapterPickerDialog(
                             tonalElevation = if (selected) 3.dp else 0.dp
                         ) {
                             Text(
-                                text = chapter.name.ifBlank { "第 ${index + 1} 章" },
+                                text = chapter.name.toDisplayText().ifBlank { "第 ${index + 1} 章" },
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,

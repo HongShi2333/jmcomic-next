@@ -87,7 +87,7 @@ fun Comic(
             Text(
                 modifier = Modifier
                     .padding(horizontal = 8.dp),
-                text = comic.name,
+                text = comic.name.toDisplayText(),
                 color = MaterialTheme.colorScheme.onSurface,
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 1,
@@ -101,7 +101,7 @@ fun Comic(
                 text = if (localSetting.showComicIdAsSubtitle) {
                     "JM${comic.id}"
                 } else {
-                    comic.authorList.joinToString(",").ifBlank { "暂无作者" }
+                    comic.authorList.joinToString(",").toDisplayText().ifBlank { "暂无作者" }
                 },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,

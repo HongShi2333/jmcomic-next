@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.screens.downloadScreen
 
+import com.par9uet.jm.ui.components.toDisplayText
+
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -536,7 +538,7 @@ private fun LocalCachedHeroCard(
         ) {
             Box(modifier = Modifier.width(142.dp)) {
                 LocalCover(
-                    title = detailState.title,
+                    title = detailState.title.toDisplayText(),
                     coverPath = detailState.coverPath,
                     imageLoader = imageLoader,
                     modifier = Modifier.fillMaxWidth(),
@@ -555,13 +557,13 @@ private fun LocalCachedHeroCard(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = detailState.title,
+                    text = detailState.title.toDisplayText(),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
                 if (detailState.authorList.isNotEmpty()) {
                     Text(
-                        text = detailState.authorList.joinToString(" · "),
+                        text = detailState.authorList.joinToString(" · ").toDisplayText(),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
@@ -675,7 +677,7 @@ private fun LocalCachedChapterDirectoryCard(
                                 modifier = Modifier.width(30.dp),
                             )
                             Text(
-                                text = chapter.name.ifBlank { "第 ${index + 1} 章" },
+                                text = chapter.name.toDisplayText().ifBlank { "第 ${index + 1} 章" },
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,

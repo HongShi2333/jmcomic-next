@@ -9,6 +9,7 @@ import com.par9uet.jm.repository.UserRepository
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.retrofit.model.UserCollectComicListResponse
 import com.par9uet.jm.utils.filterBlockedTags
+import com.par9uet.jm.utils.chineseTextKey
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -62,7 +63,7 @@ class CollectComicPagingSource(
             )
         }
 
-        val query = searchText.trim()
+        val query = chineseTextKey(searchText)
         val lowerSelectedTags = selectedTags.map { it.lowercase().trim() }.filter { it.isNotBlank() }.toSet()
         val lowerSelectedRoles = selectedRoles.map { it.lowercase().trim() }.filter { it.isNotBlank() }.toSet()
         val lowerSelectedAuthors = selectedAuthors.map { it.lowercase().trim() }.filter { it.isNotBlank() }.toSet()
@@ -80,11 +81,9 @@ class CollectComicPagingSource(
                 .filter { comic ->
                     // 顶部搜索支持按漫画名、作者或标签匹配
                     query.isBlank() ||
-                        comic.name.contains(query, ignoreCase = true) ||
-                        comic.authorList.any { it.contains(query, ignoreCase = true) } ||
-                        comic.tagList.any { it.contains(query, ignoreCase = true) } ||
-                        comic.roleList.any { it.contains(query, ignoreCase = true) } ||
-                        comic.typeList.any { it.contains(query, ignoreCase = true) }
+                        chineseTextKey(comic.name).contains(query) ||
+                        (comic.authorList + comic.tagList + comic.roleList + comic.typeList)
+                            .any { chineseTextKey(it).contains(query) }
                 }
                 .filter { comic ->
                     if (selectedGroups.isEmpty()) {

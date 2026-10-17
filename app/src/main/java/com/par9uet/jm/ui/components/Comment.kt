@@ -57,7 +57,7 @@ fun Comment(
         ) {
             AsyncImage(
                 model = avatarModel,
-                contentDescription = "${comment.nickname}的头像",
+                contentDescription = "${comment.nickname.toDisplayText()}的头像",
                 contentScale = ContentScale.FillBounds,
                 modifier = Modifier
                     .size(40.dp)
@@ -70,7 +70,7 @@ fun Comment(
                     val sourceText = comment.sourceText()
                     if (sourceText.isNotBlank()) {
                         Text(
-                            text = sourceText,
+                            text = sourceText.toDisplayText(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -78,18 +78,18 @@ fun Comment(
                     }
                 }
                 Text(
-                    text = comment.nickname,
+                    text = comment.nickname.toDisplayText(),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = comment.time,
+                    text = comment.time.toDisplayText(),
                     style = MaterialTheme.typography.labelSmall
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 val content = comment.content.toSafeAnnotatedComment()
                 Text(
-                    text = content,
+                    text = content.toDisplayText(),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 action?.let {

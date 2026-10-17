@@ -50,6 +50,7 @@ import com.par9uet.jm.cache.cachePathHasContent
 import com.par9uet.jm.cache.isDocumentCachePath
 import com.par9uet.jm.ui.viewModel.DownloadComicGroup
 import com.par9uet.jm.utils.shimmer
+import com.par9uet.jm.ui.components.toDisplayText
 import org.koin.compose.getKoin
 import java.io.File
 
@@ -107,7 +108,7 @@ fun DownloadCoverGridItem(
             ) {
                 GroupCoverImage(
                     coverPath = group.coverPath,
-                    title = group.name,
+                    title = group.name.toDisplayText(),
                     modifier = Modifier
                         .aspectRatio(3f / 4f)
                         .fillMaxWidth()
@@ -115,7 +116,7 @@ fun DownloadCoverGridItem(
                         .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 )
                 Text(
-                    text = group.name,
+                    text = group.name.toDisplayText(),
                     overflow = TextOverflow.Ellipsis,
                     maxLines = 2,
                     fontSize = 13.sp,
@@ -181,7 +182,7 @@ fun DownloadRowItem(
             }
             GroupCoverImage(
                 coverPath = group.coverPath,
-                title = group.name,
+                title = group.name.toDisplayText(),
                 modifier = Modifier
                     .width(64.dp)
                     .aspectRatio(3f / 4f)
@@ -193,7 +194,7 @@ fun DownloadRowItem(
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
-                    text = group.name,
+                    text = group.name.toDisplayText(),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,

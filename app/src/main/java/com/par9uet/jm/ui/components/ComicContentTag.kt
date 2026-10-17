@@ -21,7 +21,7 @@ fun ComicContentTag(label: String) {
         },
         label = {
             Text(
-                text = label,
+                text = label.toDisplayText(),
             )
         })
 }
