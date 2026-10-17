@@ -30,10 +30,12 @@ import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,6 +43,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,7 +63,7 @@ import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.state.rememberTabIndexState
 import com.par9uet.jm.ui.viewModel.ComicViewModel
 import com.par9uet.jm.ui.viewModel.UserViewModel
-import com.par9uet.jm.utils.filterBlockedTags
+import com.par9uet.jm.utils.normalizeBlockedTagList
 import coil.ImageLoader
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -72,6 +76,8 @@ private const val TEXT_WEEKLY = "\u6bcf\u5468"
 private const val TEXT_DOWNLOAD = "\u4e0b\u8f7d"
 private const val TEXT_SIGN = "\u7b7e\u5230"
 private const val TEXT_EXTRACT = "\u63d0\u53d6"
+
+private data class HomeScrollAnchor(val comicIds: List<Int>, val index: Int, val offset: Int)
 
 @Composable
 private fun HomeSkeleton(
@@ -138,6 +144,7 @@ fun HomeScreen(
 ) {
     val mainNavController = LocalMainNavController.current
     val homeComicState by comicViewModel.homeComicState.collectAsState()
+    val homeFilteredState by comicViewModel.homeFilteredState.collectAsState()
     val isLogin by userManager.isLoginState.collectAsState(false)
     val localSetting by localSettingManager.localSettingState.collectAsState()
     val context = LocalContext.current
@@ -154,15 +161,8 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(localSetting.comicApiSource) {
-        comicViewModel.getHomeComic()
-    }
-
-    // 首页内容首屏完成后再启动收藏预热；收藏页直接打开时会由收藏页自身触发同一流程。
-    LaunchedEffect(homeComicState.isLoading, isLogin, localSetting.comicApiSource) {
-        if (!homeComicState.isLoading && homeComicState.list.isNotEmpty() && isLogin) {
-            userViewModel.preloadFavoritesAfterHome(context, imageLoader)
-        }
+    LaunchedEffect(localSetting.comicApiSource, localSetting.api, localSetting.preferenceRecommendEnabled) {
+        comicViewModel.getHomeComic(forceRefresh = false)
     }
 
     if (homeComicState.list.isEmpty() && homeComicState.isLoading) {
@@ -185,10 +185,56 @@ fun HomeScreen(
     Column(modifier = Modifier.fillMaxSize()) {
         val currentPageData = homeComicState.list.getOrNull(selectedTabIndexState.value)
         val allExcludedTags = remember(localSetting.blockedTagList, localSetting.homeExcludedTags) {
-            (localSetting.blockedTagList + localSetting.homeExcludedTags).distinct()
+            normalizeBlockedTagList(localSetting.blockedTagList + localSetting.homeExcludedTags)
         }
-        val comicList = remember(currentPageData, allExcludedTags) {
-            (currentPageData?.list ?: listOf()).filterBlockedTags(allExcludedTags)
+        val filterRequest = remember(currentPageData, allExcludedTags, localSetting.comicApiSource, localSetting.api) {
+            currentPageData?.let {
+                ComicViewModel.HomeFilterRequest(it, allExcludedTags, "${localSetting.comicApiSource}|${localSetting.api}")
+            }
+        }
+        var filterScrollAnchor by remember(filterRequest) {
+            val previous = homeFilteredState.takeIf {
+                filterRequest != null && it.request != filterRequest &&
+                    it.request?.category == filterRequest.category && it.request.source == filterRequest.source
+            }?.result?.comics.orEmpty()
+            val index = gridState.firstVisibleItemIndex
+            val comicIndex = (index - 1).coerceIn(0, previous.size)
+            mutableStateOf(previous.takeIf { it.isNotEmpty() }?.let {
+                HomeScrollAnchor(
+                    (it.drop(comicIndex) + it.take(comicIndex).asReversed()).map { comic -> comic.id },
+                    index, gridState.firstVisibleItemScrollOffset,
+                )
+            })
+        }
+        LaunchedEffect(filterRequest) {
+            filterRequest?.let { comicViewModel.filterHomeCategory(it) }
+        }
+        val matchingFilterState = homeFilteredState.takeIf { it.request == filterRequest }
+        val checkingTags = allExcludedTags.isNotEmpty() && filterRequest != null &&
+            (matchingFilterState == null || matchingFilterState.isLoading)
+        val comicList = if (allExcludedTags.isEmpty()) {
+            currentPageData?.list.orEmpty()
+        } else {
+            matchingFilterState?.result?.comics.orEmpty()
+        }
+        val unresolvedCount = matchingFilterState?.result?.unresolvedCount ?: 0
+        val filterError = matchingFilterState?.errorMsg.takeIf { allExcludedTags.isNotEmpty() }
+        LaunchedEffect(filterScrollAnchor, matchingFilterState) {
+            val anchor = filterScrollAnchor ?: return@LaunchedEffect
+            if (matchingFilterState?.result != null && !matchingFilterState.isLoading) {
+                val positions = comicList.mapIndexed { index, comic -> comic.id to index + 1 }.toMap()
+                val index = if (anchor.index == 0) 0 else {
+                    anchor.comicIds.firstNotNullOfOrNull { positions[it] } ?: anchor.index.coerceAtMost(comicList.size)
+                }
+                gridState.requestScrollToItem(index, anchor.offset)
+                filterScrollAnchor = null
+            }
+        }
+        // 标签检查完成后再预热收藏信息。
+        LaunchedEffect(homeComicState.isLoading, checkingTags, isLogin, localSetting.comicApiSource) {
+            if (!homeComicState.isLoading && !checkingTags && comicList.isNotEmpty() && isLogin) {
+                userViewModel.preloadFavoritesAfterHome(context, imageLoader)
+            }
         }
         val chipsScrollState = rememberScrollState()
         PullToRefreshBox(
@@ -254,7 +300,7 @@ fun HomeScreen(
                 items(items = comicList, key = { it.id }) {
                     Comic(it)
                 }
-                if (comicList.isEmpty() && !homeComicState.isLoading) {
+                if (!homeComicState.isLoading && (checkingTags || comicList.isEmpty() || unresolvedCount > 0 || filterError != null)) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(
                             modifier = Modifier
@@ -263,18 +309,31 @@ fun HomeScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(
+                            if (checkingTags) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            } else Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                             )
                             Text(
-                                text = if (allExcludedTags.isNotEmpty()) "当前分类的漫画均被标签排除过滤" else "暂无漫画",
+                                text = when {
+                                    checkingTags -> "正在检查漫画标签 ${matchingFilterState?.checkedCount ?: 0}/${matchingFilterState?.totalCount ?: currentPageData?.list?.size ?: 0}…"
+                                    filterError != null -> filterError
+                                    homeComicState.isError -> homeComicState.errorMsg ?: "首页加载失败"
+                                    unresolvedCount > 0 -> "$unresolvedCount 部漫画标签检查失败，暂未显示"
+                                    allExcludedTags.isNotEmpty() -> "当前分类的漫画均被标签排除过滤"
+                                    else -> "暂无漫画"
+                                },
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (allExcludedTags.isNotEmpty()) {
+                            if (!checkingTags && (unresolvedCount > 0 || filterError != null) && filterRequest != null) {
+                                TextButton(onClick = { comicViewModel.filterHomeCategory(filterRequest, forceRefresh = true) }) {
+                                    Text("重新检查标签")
+                                }
+                            } else if (allExcludedTags.isNotEmpty() && !checkingTags && !homeComicState.isError) {
                                 Text(
                                     text = "可在 设置 → 标签排除 中调整",
                                     style = MaterialTheme.typography.bodySmall,
