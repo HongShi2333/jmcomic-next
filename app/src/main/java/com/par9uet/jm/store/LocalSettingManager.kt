@@ -189,6 +189,14 @@ class LocalSettingManager(
         }
     }
 
+    fun addTagToBlockedTagTemplate(index: Int, tag: String) =
+        updateSetting { setting ->
+            val templates = setting.blockedTagTemplateList.toMutableList()
+            val template = templates.getOrNull(index) ?: return@updateSetting setting
+            templates[index] = template.copy(tagList = normalizeBlockedTagList(template.tagList + tag))
+            setting.withBlockedTagTemplates(templates)
+        }
+
     fun removeBlockedTagTemplate(index: Int) =
         updateSetting { setting ->
             if (index !in setting.blockedTagTemplateList.indices) {
