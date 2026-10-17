@@ -40,11 +40,12 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -192,7 +193,7 @@ fun HomeScreen(
                 ComicViewModel.HomeFilterRequest(it, allExcludedTags, "${localSetting.comicApiSource}|${localSetting.api}")
             }
         }
-        var filterScrollAnchor by remember(filterRequest) {
+        var filterScrollAnchor by remember(filterRequest, homeComicState.revision) {
             val previous = homeFilteredState.takeIf {
                 filterRequest != null && it.request != filterRequest &&
                     it.request?.category == filterRequest.category && it.request.source == filterRequest.source
@@ -206,22 +207,21 @@ fun HomeScreen(
                 )
             })
         }
-        LaunchedEffect(filterRequest) {
+        LaunchedEffect(filterRequest, homeComicState.revision) {
             filterRequest?.let { comicViewModel.filterHomeCategory(it) }
         }
         val matchingFilterState = homeFilteredState.takeIf { it.request == filterRequest }
         val checkingTags = allExcludedTags.isNotEmpty() && filterRequest != null &&
             (matchingFilterState == null || matchingFilterState.isLoading)
-        val comicList = if (allExcludedTags.isEmpty()) {
-            currentPageData?.list.orEmpty()
-        } else {
-            matchingFilterState?.result?.comics.orEmpty()
-        }
+        val comicList = matchingFilterState?.result?.comics
+            ?: if (allExcludedTags.isEmpty()) currentPageData?.list.orEmpty() else emptyList()
         val unresolvedCount = matchingFilterState?.result?.unresolvedCount ?: 0
         val filterError = matchingFilterState?.errorMsg.takeIf { allExcludedTags.isNotEmpty() }
+        // 标签检查完成后再预热收藏信息。
+        val loadingMore = matchingFilterState?.isLoadingMore == true
         LaunchedEffect(filterScrollAnchor, matchingFilterState) {
             val anchor = filterScrollAnchor ?: return@LaunchedEffect
-            if (matchingFilterState?.result != null && !matchingFilterState.isLoading) {
+            if (matchingFilterState?.result != null && !matchingFilterState.isLoading && !loadingMore) {
                 val positions = comicList.mapIndexed { index, comic -> comic.id to index + 1 }.toMap()
                 val index = if (anchor.index == 0) 0 else {
                     anchor.comicIds.firstNotNullOfOrNull { positions[it] } ?: anchor.index.coerceAtMost(comicList.size)
@@ -230,9 +230,22 @@ fun HomeScreen(
                 filterScrollAnchor = null
             }
         }
-        // 标签检查完成后再预热收藏信息。
-        LaunchedEffect(homeComicState.isLoading, checkingTags, isLogin, localSetting.comicApiSource) {
-            if (!homeComicState.isLoading && !checkingTags && comicList.isNotEmpty() && isLogin) {
+        val nearEnd by remember(gridState) {
+            derivedStateOf {
+                val info = gridState.layoutInfo
+                info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 6
+            }
+        }
+        LaunchedEffect(filterRequest, comicList.size, nearEnd, checkingTags, loadingMore, filterScrollAnchor, matchingFilterState?.hasMore,
+            matchingFilterState?.loadMoreError, matchingFilterState?.autoFillPaused, homeComicState.isLoading) {
+            if (filterRequest != null && filterScrollAnchor == null && nearEnd && comicList.size >= 20 && !checkingTags && !loadingMore &&
+                !homeComicState.isLoading && matchingFilterState?.hasMore == true &&
+                matchingFilterState.loadMoreError == null && !matchingFilterState.autoFillPaused) {
+                comicViewModel.loadMoreHomeCategory(filterRequest)
+            }
+        }
+        LaunchedEffect(homeComicState.isLoading, checkingTags, loadingMore, isLogin, localSetting.comicApiSource) {
+            if (!homeComicState.isLoading && !checkingTags && !loadingMore && comicList.isNotEmpty() && isLogin) {
                 userViewModel.preloadFavoritesAfterHome(context, imageLoader)
             }
         }
@@ -300,7 +313,8 @@ fun HomeScreen(
                 items(items = comicList, key = { it.id }) {
                     Comic(it)
                 }
-                if (!homeComicState.isLoading && (checkingTags || comicList.isEmpty() || unresolvedCount > 0 || filterError != null)) {
+                if (!homeComicState.isLoading && (!loadingMore || checkingTags) &&
+                    (checkingTags || comicList.isEmpty() || unresolvedCount > 0 || filterError != null)) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(
                             modifier = Modifier
@@ -323,7 +337,7 @@ fun HomeScreen(
                                     filterError != null -> filterError
                                     homeComicState.isError -> homeComicState.errorMsg ?: "首页加载失败"
                                     unresolvedCount > 0 -> "$unresolvedCount 部漫画标签检查失败，暂未显示"
-                                    allExcludedTags.isNotEmpty() -> "当前分类的漫画均被标签排除过滤"
+                                    allExcludedTags.isNotEmpty() -> "已加载的漫画均被标签排除过滤"
                                     else -> "暂无漫画"
                                 },
                                 style = MaterialTheme.typography.bodyLarge,
@@ -339,6 +353,32 @@ fun HomeScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
+                            }
+                        }
+                    }
+                }
+                if (matchingFilterState != null && filterRequest != null && !checkingTags && !homeComicState.isLoading) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            when {
+                                loadingMore -> {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    Text("正在补充漫画…")
+                                }
+                                matchingFilterState.loadMoreError != null -> {
+                                    Text(matchingFilterState.loadMoreError, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    TextButton(onClick = { comicViewModel.loadMoreHomeCategory(filterRequest) }) { Text("重试加载") }
+                                }
+                                matchingFilterState.hasMore -> {
+                                    TextButton(onClick = { comicViewModel.loadMoreHomeCategory(filterRequest) }) {
+                                        Text(if (matchingFilterState.autoFillPaused) "继续补充漫画" else "加载更多")
+                                    }
+                                }
+                                comicList.isNotEmpty() -> Text("没有更多漫画了", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }

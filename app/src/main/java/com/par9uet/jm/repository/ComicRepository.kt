@@ -1,6 +1,8 @@
 package com.par9uet.jm.repository
 
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
+import com.par9uet.jm.data.models.HomeCategoryPageSource
+import com.par9uet.jm.data.models.HomeComicPage
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
 import com.par9uet.jm.retrofit.model.ComicListResponse
@@ -19,6 +21,7 @@ interface ComicRepository {
     suspend fun collectComic(id: Int): NetWorkResult<CollectComicResponse>
     suspend fun unCollectComic(id: Int): NetWorkResult<CollectComicResponse>
     suspend fun getHomeSwiperComicList(): NetWorkResult<List<HomeSwiperComicListItemResponse>>
+    suspend fun getHomeCategoryPage(source: HomeCategoryPageSource, page: Int): NetWorkResult<HomeComicPage>
     suspend fun getComicPicList(id: Int, shunt: String): NetWorkResult<ComicPicListResponse>
     suspend fun downloadImageBytes(comicId: Int, imageIndex: Int): ByteArray?
     suspend fun getComicList(
