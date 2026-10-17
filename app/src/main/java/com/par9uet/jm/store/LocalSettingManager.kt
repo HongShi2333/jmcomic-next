@@ -321,6 +321,9 @@ class LocalSettingManager(
     fun dismissNsfwWarning() =
         updateSetting { it.copy(nsfwWarningDismissed = true) }
 
+    fun updateHomeCategoryOrder(ids: List<String>) =
+        updateSetting { it.copy(homeCategoryOrder = ids.filter(String::isNotBlank).distinct()) }
+
     fun updateHomeGridColumns(columns: Int) =
         updateSetting { it.copy(homeGridColumns = columns.coerceIn(0, 6)) }
 

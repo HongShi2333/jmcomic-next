@@ -56,10 +56,18 @@ import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.ScrollToTopButton
 import com.par9uet.jm.ui.components.TabSkeleton
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
-import com.par9uet.jm.ui.state.rememberTabIndexState
 import com.par9uet.jm.ui.viewModel.ComicViewModel
 import com.par9uet.jm.ui.viewModel.UserViewModel
 import com.par9uet.jm.utils.filterBlockedTags
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import com.par9uet.jm.data.models.HomeComicSwiperItem
+import com.par9uet.jm.ui.components.HomeCategorySortDialog
+import com.par9uet.jm.utils.orderHomeCategories
 import coil.ImageLoader
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -176,14 +184,36 @@ fun HomeScreen(
         return
     }
 
-    val selectedTabIndexState = rememberTabIndexState()
+    val categories = remember(homeComicState.list, localSetting.homeCategoryOrder) {
+        orderHomeCategories(homeComicState.list, localSetting.homeCategoryOrder)
+    }
+    var selectedCategoryId by rememberSaveable(localSetting.comicApiSource, localSetting.api) {
+        mutableStateOf<String?>(null)
+    }
+    var showCategorySort by rememberSaveable(localSetting.comicApiSource, localSetting.api) {
+        mutableStateOf(false)
+    }
+    val selectedTabIndex = categories.indexOfFirst { it.id == selectedCategoryId }.coerceAtLeast(0)
+    val currentPageData = categories.getOrNull(selectedTabIndex)
     val gridState = rememberLazyGridState()
     val onTabClick: (index: Int) -> Unit = {
-        selectedTabIndexState.value = it.coerceIn(0, (homeComicState.list.size - 1).coerceAtLeast(0))
+        selectedCategoryId = categories.getOrNull(it.coerceIn(0, categories.lastIndex.coerceAtLeast(0)))?.id
+    }
+
+    if (showCategorySort) {
+        HomeCategorySortDialog(
+            categories = homeComicState.list,
+            order = localSetting.homeCategoryOrder,
+            onSave = { order ->
+                selectedCategoryId = currentPageData?.id
+                localSettingManager.updateHomeCategoryOrder(order)
+                showCategorySort = false
+            },
+            onDismiss = { showCategorySort = false },
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        val currentPageData = homeComicState.list.getOrNull(selectedTabIndexState.value)
         val allExcludedTags = remember(localSetting.blockedTagList, localSetting.homeExcludedTags) {
             (localSetting.blockedTagList + localSetting.homeExcludedTags).distinct()
         }
@@ -199,7 +229,7 @@ fun HomeScreen(
             LazyVerticalGrid(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(selectedTabIndexState.value, homeComicState.list.size) {
+                    .pointerInput(selectedTabIndex, categories.map { it.id }) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
                             val chipsScrollAtDown = chipsScrollState.value
@@ -220,9 +250,9 @@ fun HomeScreen(
                                 abs(totalX) > abs(totalY) * 1.2f
                             ) {
                                 if (totalX < 0) {
-                                    onTabClick(selectedTabIndexState.value + 1)
+                                    onTabClick(selectedTabIndex + 1)
                                 } else {
-                                    onTabClick(selectedTabIndexState.value - 1)
+                                    onTabClick(selectedTabIndex - 1)
                                 }
                             }
                         }
@@ -244,10 +274,11 @@ fun HomeScreen(
                             onSign = onSign
                         )
                         HomeCategoryChips(
-                            categories = homeComicState.list.map { it.title },
-                            selectedIndex = selectedTabIndexState.value,
+                            categories = categories,
+                            selectedIndex = selectedTabIndex,
                             onSelect = onTabClick,
-                            scrollState = chipsScrollState
+                            scrollState = chipsScrollState,
+                            onSort = { showCategorySort = true },
                         )
                     }
                 }
@@ -394,25 +425,34 @@ private fun HomeHeader(
  */
 @Composable
 private fun HomeCategoryChips(
-    categories: List<String>,
+    categories: List<HomeComicSwiperItem>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
-    scrollState: ScrollState
+    scrollState: ScrollState,
+    onSort: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(scrollState),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        categories.forEachIndexed { index, title ->
-            key(title) {
-                CategoryChipItem(
-                    title = title,
-                    selected = selectedIndex == index,
-                    scrollState = scrollState,
-                    onClick = { onSelect(index) }
-                )
+        Row(
+            modifier = Modifier.weight(1f).horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            categories.forEachIndexed { index, category ->
+                key(category.id) {
+                    CategoryChipItem(
+                        title = category.title,
+                        selected = selectedIndex == index,
+                        scrollState = scrollState,
+                        onClick = { onSelect(index) },
+                    )
+                }
+            }
+        }
+        if (categories.size > 1) {
+            IconButton(onClick = onSort) {
+                Icon(Icons.Default.SwapVert, contentDescription = "分类排序")
             }
         }
     }
@@ -425,6 +465,7 @@ private fun CategoryChipItem(
     scrollState: ScrollState,
     onClick: () -> Unit
 ) {
+    val currentOnClick by rememberUpdatedState(onClick)
     val containerColor = if (selected) {
         MaterialTheme.colorScheme.primary
     } else {
@@ -445,7 +486,7 @@ private fun CategoryChipItem(
                 } while (event.changes.any { it.pressed })
                 val scrollDelta = abs(scrollState.value - scrollAtDown)
                 if (scrollDelta < 2) {
-                    onClick()
+                    currentOnClick()
                 }
             }
         },
