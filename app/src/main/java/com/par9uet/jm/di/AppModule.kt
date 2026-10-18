@@ -52,7 +52,7 @@ val appModule = module {
     single { LocalSettingStorage(get()) }
     single { HistorySearchStorage(get()) }
     single { ReadHistoryStorage(get()) }
-    single { AiChatStorage(get()) }
+    single { AiChatStorage(get(), get()) }
     single { PersonaStorage(get()) }
     single { LauncherDisguiseApplier(get()) }
 

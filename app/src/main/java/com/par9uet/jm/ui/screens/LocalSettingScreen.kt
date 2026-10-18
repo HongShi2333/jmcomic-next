@@ -118,6 +118,7 @@ import com.par9uet.jm.worker.CACHE_MIGRATION_TARGET_URI
 import com.par9uet.jm.worker.CACHE_MIGRATION_WORK_NAME
 import com.par9uet.jm.cache.ensureDownloadTreeHiddenFromGallery
 import com.par9uet.jm.worker.CacheMigrationWorker
+import com.par9uet.jm.ui.screens.readScreen.ReaderBrightnessControls
 
 private sealed class SettingType {
     object ComicApiSource : SettingType()
@@ -203,8 +204,7 @@ fun LocalSettingScreen(
     val cacheFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri != null) {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             runCatching { context.contentResolver.takePersistableUriPermission(uri, flags) }
             val treeUri = uri.toString()
             ensureDownloadTreeHiddenFromGallery(context, treeUri)
@@ -360,6 +360,25 @@ fun LocalSettingScreen(
             }
             item {
                 SettingsSection(title = "阅读与缓存") {
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.Download,
+                        title = "长按阅读图片保存",
+                        value = localSetting.readerLongPressSaveEnabled,
+                        onCheckedChange = localSettingManager::updateReaderLongPressSaveEnabled,
+                    )
+                    SettingsSwitchRow(
+                        icon = Icons.Rounded.DarkMode,
+                        title = "跟随系统调整阅读亮度",
+                        value = localSetting.readerBrightnessEnabled,
+                        onCheckedChange = localSettingManager::updateReaderBrightnessEnabled,
+                    )
+                    if (localSetting.readerBrightnessEnabled) {
+                        ReaderBrightnessControls(
+                            light = localSetting.readerLightBrightnessPercent,
+                            dark = localSetting.readerDarkBrightnessPercent,
+                            onChange = localSettingManager::updateReaderBrightness,
+                        )
+                    }
                     SettingsRow(Icons.Rounded.Tune, "\u56fe\u7247\u9884\u52a0\u8f7d", prefetchText(localSetting.prefetchCount)) {
                         openSetting(SettingType.PrefetchCount)
                     }

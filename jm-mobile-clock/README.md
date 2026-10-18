@@ -1,15 +1,41 @@
-# jm-mobile-clock
+# JMcomic Clock
 
-`jm-mobile-clock` 是 `jm-mobile-android6` 的手表端应用模块。它与手机/平板端共用同一个 Gradle 根工程、wrapper、版本目录和依赖缓存，目录内不会再维护一套项目级 Gradle 配置。
+这是 Wear OS 手表端应用模块，位于共享 Gradle 根工程的
+`:jm-mobile-clock` 项目中。手表端源码保持在本目录，不与手机端
+`app/` 混合。
 
-## 手表端范围
+## 导入
 
-- 保留：发现、搜索、详情、章节选择、在线阅读、登录、线上收藏、应用锁、阅读进度、剪切板编码检测、主题与界面缩放。
-- 移除：封面、漫画页和下载内容的本地持久化缓存。图片仅在当前页面内存中解码，离开即释放。
-- 适配：圆形/方形小屏安全边距、单列信息架构、旋转表冠滚动、PIN 键盘、大触控区域、OLED 深色主题和 85%/100%/115% 视觉缩放。
+在 Android Studio 中打开仓库根目录：
 
-## 打开方式
+```text
+.
+├─ app/
+├─ jm-mobile-clock/
+├─ gradle/
+└─ settings.gradle.kts
+```
 
-请始终从 `jm-mobile-android6` 目录打开 Android Studio 或运行 Gradle。模块名为 `:jm-mobile-clock`，本目录没有也不需要 `settings.gradle.kts`、Gradle wrapper、`gradle.properties` 或 `.gradle` 缓存。
+不要单独打开本目录，也不要为本模块新增第二套 Gradle Wrapper、
+版本目录或插件配置。
 
-本地最终验证可在 `jm-mobile-android6` 根目录执行 `gradlew.bat :jm-mobile-clock:assembleDebug`。
+## 手表端检查
+
+从仓库根目录执行：
+
+```powershell
+.\gradlew.bat :jm-mobile-clock:compileDebugKotlin --offline --no-daemon --max-workers=2 --console=plain
+.\gradlew.bat :jm-mobile-clock:testDebugUnitTest --offline --no-daemon --max-workers=2 --console=plain
+```
+
+完整构建和签名发布请在本地或 CI 环境完成。签名文件、密钥和本地
+配置必须保存在仓库外。
+
+## 主要能力
+
+- 圆形与方形表盘适配；
+- 手表首页、菜单、详情、设置和收藏；
+- 阅读控制、缩放、分页、重力翻页；
+- 应用锁、图形锁、悬浮球和后台防窥；
+- 离线缓存、下载进度、暂停/恢复、失败重试和本地阅读；
+- AI 对话与联网搜索。

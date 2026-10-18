@@ -10,6 +10,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,9 +54,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -95,6 +99,20 @@ fun ComicReadScreen(
     val size = comicReadViewModel.size
     var currentIndexState by comicReadViewModel.currentIndexState
     val localSetting by localSettingManager.localSettingState.collectAsState()
+    var brightnessOverride by rememberSaveable { mutableIntStateOf(0) }
+    val systemDark = isSystemInDarkTheme()
+    val brightnessPercent = readerBrightnessPercent(
+        localSetting.readerBrightnessEnabled, systemDark,
+        localSetting.readerLightBrightnessPercent, localSetting.readerDarkBrightnessPercent,
+        brightnessOverride,
+    )
+    val dimmingAlpha = readerDimmingAlpha(
+        localSetting.readerBrightnessEnabled,
+        systemDark,
+        localSetting.readerLightBrightnessPercent,
+        localSetting.readerDarkBrightnessPercent,
+        brightnessOverride,
+    )
     val isLogin by userManager.isLoginState.collectAsState(false)
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
     val comicDetailState by comicReadViewModel.comicDetailState.collectAsState()
@@ -154,7 +172,7 @@ fun ComicReadScreen(
 
     fun updateIndexFromReader(value: Float) {
         val target = value.toInt().coerceIn(0, maxOf(0, size - 1))
-        if (target != currentIndexState) {
+        if (target != currentIndexState && localSetting.readMode != "scroll") {
             zoomState.reset()
         }
         // Keep the toolbar and reading-memory state driven by one observable source.
@@ -285,25 +303,30 @@ fun ComicReadScreen(
                 modifier = Modifier.align(Alignment.Center)
             )
         } else {
-            if (localSetting.readMode == "scroll") {
-                ComicScrollRead(
-                    lazyListState = lazyListState,
-                    pagerState = pagerState,
-                    targetIndex = targetIndex,
-                    zoomState = zoomState,
-                    comicReadViewModel = comicReadViewModel,
-                    onUpdateSliderValue = { updateIndexFromReader(it) }
-                )
-            } else {
-                ComicPageRead(
-                    lazyListState = lazyListState,
-                    pagerState = pagerState,
-                    targetIndex = targetIndex,
-                    zoomState = zoomState,
-                    comicReadViewModel = comicReadViewModel,
-                    tapOnly = localSetting.readMode == "tap",
-                    onUpdateSliderValue = { updateIndexFromReader(it) }
-                )
+            Box(Modifier.fillMaxSize().drawWithContent {
+                drawContent()
+                if (dimmingAlpha > 0f) drawRect(Color.Black.copy(alpha = dimmingAlpha))
+            }) {
+                if (localSetting.readMode == "scroll") {
+                    ComicScrollRead(
+                        lazyListState = lazyListState,
+                        pagerState = pagerState,
+                        targetIndex = targetIndex,
+                        zoomState = zoomState,
+                        comicReadViewModel = comicReadViewModel,
+                        onUpdateSliderValue = { updateIndexFromReader(it) }
+                    )
+                } else {
+                    ComicPageRead(
+                        lazyListState = lazyListState,
+                        pagerState = pagerState,
+                        targetIndex = targetIndex,
+                        zoomState = zoomState,
+                        comicReadViewModel = comicReadViewModel,
+                        tapOnly = localSetting.readMode == "tap",
+                        onUpdateSliderValue = { updateIndexFromReader(it) }
+                    )
+                }
             }
             AnimatedVisibility(
                 modifier = Modifier
@@ -382,7 +405,11 @@ fun ComicReadScreen(
                     onPreviousChapter = { navigateToChapter(previousChapter) },
                     onNextChapter = { navigateToChapter(nextChapter) },
                     onPageSelected = { jumpToIndex(it) },
-                    onResetZoom = { zoomState.reset() }
+                    onResetZoom = { zoomState.reset() },
+                    brightnessPercent = brightnessPercent,
+                    brightnessOverridden = brightnessOverride > 0,
+                    onBrightnessChange = { brightnessOverride = it.coerceIn(1, 100) },
+                    onRestoreBrightness = { brightnessOverride = 0 },
                 )
             }
             AnimatedVisibility(

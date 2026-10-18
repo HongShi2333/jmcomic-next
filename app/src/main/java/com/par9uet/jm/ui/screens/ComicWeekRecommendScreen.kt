@@ -19,12 +19,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.data.models.WeekData
 import com.par9uet.jm.ui.components.Comic
+import com.par9uet.jm.ui.components.ComicPagePreloadEffect
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.FilterItem
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.rememberComicPageGridState
 import com.par9uet.jm.ui.components.SelectDialog
 import com.par9uet.jm.ui.components.SelectOption
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
@@ -77,6 +80,13 @@ fun ComicWeekRecommendScreen(
     val weekDataState by comicViewModel.weekDataState.collectAsState()
     val weekFilterState by comicViewModel.weekFilterState.collectAsState()
     val weekRecommendComicPagingItems = comicViewModel.weekComicPager.collectAsLazyPagingItems()
+    val pageState by comicViewModel.weekPagination.state.collectAsState()
+    val comicGridState = rememberComicPageGridState(pageState.page, weekFilterState)
+    ComicPagePreloadEffect(
+        controller = comicViewModel.weekPagination,
+        ready = weekRecommendComicPagingItems.itemCount > 0 &&
+            weekRecommendComicPagingItems.loadState.refresh is LoadState.NotLoading,
+    )
     val weekCategoryFilter by remember(weekFilterState) {
         derivedStateOf {
             val categoryList = weekDataState.data?.categoryList ?: listOf()
@@ -127,12 +137,16 @@ fun ComicWeekRecommendScreen(
                 HorizontalDivider()
             }
             PullRefreshAndLoadMoreGrid(
+                gridState = comicGridState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
                 lazyPagingItems = weekRecommendComicPagingItems,
                 key = { it.id },
                 columns = adaptiveComicGridCells(),
+                pageState = pageState,
+                onPageChange = comicViewModel.weekPagination::selectPage,
+                onRefresh = comicViewModel.weekPagination::refresh,
             ) {
                 Comic(it)
             }

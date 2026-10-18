@@ -8,6 +8,9 @@ import androidx.compose.runtime.Composable
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.theme.ExtendedTheme
 
+fun comicTagSearchRoute(label: String): String =
+    "comicSearchResult/${Uri.encode(label.trim())}?mainTag=3"
+
 @Composable
 fun ComicContentTag(label: String) {
     val mainNavController = LocalMainNavController.current
@@ -17,7 +20,7 @@ fun ComicContentTag(label: String) {
             containerColor = ExtendedTheme.colors.contentTag.colorContainer
         ),
         onClick = {
-            mainNavController.navigate("comicSearchResult/${Uri.encode(label)}")
+            mainNavController.navigate(comicTagSearchRoute(label))
         },
         label = {
             Text(

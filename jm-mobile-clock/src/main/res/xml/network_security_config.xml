@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 网络安全配置：信任系统和用户安装的CA证书，修复安卓6上Let's Encrypt等现代证书不可信的问题 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>

@@ -100,8 +100,11 @@ import coil.ImageLoader
 import com.par9uet.jm.data.models.CollectComicOrderFilter
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.ui.components.Comic
+import com.par9uet.jm.ui.components.ComicPaginationBar
+import com.par9uet.jm.ui.components.ComicPagePreloadEffect
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.rememberComicPageGridState
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.ui.components.adaptiveDialogMaxHeight
 import com.par9uet.jm.ui.viewModel.UserViewModel
@@ -171,6 +174,7 @@ fun UserCollectComicScreen(
     val imageLoader: ImageLoader = getKoin().get()
     val userManager: UserManager = getKoin().get()
     val collectComicLazyPagingItems = userViewModel.collectComicPager.collectAsLazyPagingItems()
+    val pageState by userViewModel.collectPagination.state.collectAsState()
     val isLogin by userManager.isLoginState.collectAsState(false)
     val order by userViewModel.collectComicOrder.collectAsState()
     val collectComicFilter by userViewModel.collectComicFilter.collectAsState()
@@ -182,6 +186,7 @@ fun UserCollectComicScreen(
     val folderList by userViewModel.folderList.collectAsState()
     val collectEditState by userViewModel.collectEditState.collectAsState()
     val localSetting by localSettingManager.localSettingState.collectAsState()
+    val comicGridState = rememberComicPageGridState(pageState.page, Triple(order, collectComicFilter, selectedFolderId))
     var draftSelectedTags by remember { mutableStateOf<Set<String>>(emptySet()) }
     var draftSelectedRoles by remember { mutableStateOf<Set<String>>(emptySet()) }
     var draftSelectedAuthors by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -232,10 +237,15 @@ fun UserCollectComicScreen(
         collectComicFilter.selectedTypes.size
     val collectPullRefreshState = rememberPullToRefreshState()
     val isCollectRefreshing = collectComicLazyPagingItems.loadState.refresh is LoadState.Loading
+    ComicPagePreloadEffect(
+        controller = userViewModel.collectPagination,
+        ready = isLogin && collectComicLazyPagingItems.itemCount > 0 &&
+            collectComicLazyPagingItems.loadState.refresh is LoadState.NotLoading,
+    )
 
     LaunchedEffect(isLogin) {
         if (isLogin) {
-            userViewModel.preloadFavoritesAfterHome(context, imageLoader)
+            userViewModel.preloadFavorites(context, imageLoader, foreground = true)
         }
     }
 
@@ -421,8 +431,15 @@ fun UserCollectComicScreen(
                             .weight(1f)
                             .fillMaxWidth()
                     )
+                    if (pageState.enabled) {
+                        ComicPaginationBar(
+                            state = pageState,
+                            onPageChange = userViewModel.collectPagination::selectPage,
+                        )
+                    }
                 } else {
                     PullRefreshAndLoadMoreGrid(
+                        gridState = comicGridState,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
@@ -434,6 +451,11 @@ fun UserCollectComicScreen(
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         contentPadding = PaddingValues(14.dp),
                         enablePullRefresh = false,
+                        pageState = pageState,
+                        onPageChange = { page ->
+                            userViewModel.clearCollectSelection()
+                            userViewModel.collectPagination.selectPage(page)
+                        },
                     ) { comic ->
                         Comic(
                             comic = comic,

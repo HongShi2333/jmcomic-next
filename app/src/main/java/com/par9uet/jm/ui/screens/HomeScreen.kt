@@ -29,22 +29,24 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,8 +57,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.store.LocalSettingManager
-import com.par9uet.jm.store.UserManager
-import com.par9uet.jm.ui.components.Comic
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.data.models.HomeComicSwiperItem
 import com.par9uet.jm.ui.components.Comic
@@ -89,8 +89,6 @@ private const val TEXT_WEEKLY = "\u6bcf\u5468"
 private const val TEXT_DOWNLOAD = "\u4e0b\u8f7d"
 private const val TEXT_SIGN = "\u7b7e\u5230"
 private const val TEXT_EXTRACT = "\u63d0\u53d6"
-
-private data class HomeScrollAnchor(val comicIds: List<Int>, val index: Int, val offset: Int)
 
 @Composable
 private fun HomeSkeleton(
@@ -157,7 +155,6 @@ fun HomeScreen(
 ) {
     val mainNavController = LocalMainNavController.current
     val homeComicState by comicViewModel.homeComicState.collectAsState()
-    val homeFilteredState by comicViewModel.homeFilteredState.collectAsState()
     val isLogin by userManager.isLoginState.collectAsState(false)
     val localSetting by localSettingManager.localSettingState.collectAsState()
     val context = LocalContext.current
@@ -174,8 +171,17 @@ fun HomeScreen(
         }
     }
 
-    LaunchedEffect(localSetting.comicApiSource, localSetting.api, localSetting.preferenceRecommendEnabled) {
+    LaunchedEffect(localSetting.comicApiSource) {
         comicViewModel.getHomeComic(forceRefresh = false)
+    }
+
+    LaunchedEffect(isLogin, localSetting.comicApiSource) {
+        if (isLogin) {
+            userViewModel.preloadFavorites(
+                context, imageLoader,
+                homeReady = comicViewModel.homeComicState.map { it.list.isNotEmpty() || !it.isLoading },
+            )
+        }
     }
 
     if (homeComicState.list.isEmpty() && homeComicState.isLoading) {
@@ -192,17 +198,23 @@ fun HomeScreen(
     val categories = remember(homeComicState.list, localSetting.homeCategoryOrder) {
         orderHomeCategories(homeComicState.list, localSetting.homeCategoryOrder)
     }
-    var selectedCategoryId by rememberSaveable(localSetting.comicApiSource, localSetting.api) {
-        mutableStateOf<String?>(null)
-    }
-    var showCategorySort by rememberSaveable(localSetting.comicApiSource, localSetting.api) {
-        mutableStateOf(false)
-    }
-    val selectedTabIndex = categories.indexOfFirst { it.id == selectedCategoryId }.coerceAtLeast(0)
+    var selectedCategoryId by rememberSaveable(
+        localSetting.comicApiSource,
+        localSetting.api,
+    ) { mutableStateOf<String?>(null) }
+    var showCategorySort by rememberSaveable(
+        localSetting.comicApiSource,
+        localSetting.api,
+    ) { mutableStateOf(false) }
+    val selectedTabIndex = categories.indexOfFirst { it.id == selectedCategoryId }
+        .coerceAtLeast(0)
     val currentPageData = categories.getOrNull(selectedTabIndex)
     val gridState = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
     val onTabClick: (index: Int) -> Unit = {
-        selectedCategoryId = categories.getOrNull(it.coerceIn(0, categories.lastIndex.coerceAtLeast(0)))?.id
+        selectedCategoryId = categories
+            .getOrNull(it.coerceIn(0, (categories.size - 1).coerceAtLeast(0)))
+            ?.id
     }
 
     if (showCategorySort) {
@@ -220,78 +232,37 @@ fun HomeScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         val allExcludedTags = remember(localSetting.blockedTagList, localSetting.homeExcludedTags) {
-            normalizeBlockedTagList(localSetting.blockedTagList + localSetting.homeExcludedTags)
+            (localSetting.blockedTagList + localSetting.homeExcludedTags).distinct()
         }
-        val filterRequest = remember(currentPageData, allExcludedTags, localSetting.comicApiSource, localSetting.api) {
-            currentPageData?.let {
-                ComicViewModel.HomeFilterRequest(it, allExcludedTags, "${localSetting.comicApiSource}|${localSetting.api}")
-            }
-        }
-        var filterScrollAnchor by remember(filterRequest, homeComicState.revision) {
-            val previous = homeFilteredState.takeIf {
-                filterRequest != null && it.request != filterRequest &&
-                    it.request?.category == filterRequest.category && it.request.source == filterRequest.source
-            }?.result?.comics.orEmpty()
-            val index = gridState.firstVisibleItemIndex
-            val comicIndex = (index - 1).coerceIn(0, previous.size)
-            mutableStateOf(previous.takeIf { it.isNotEmpty() }?.let {
-                HomeScrollAnchor(
-                    (it.drop(comicIndex) + it.take(comicIndex).asReversed()).map { comic -> comic.id },
-                    index, gridState.firstVisibleItemScrollOffset,
-                )
-            })
-        }
-        LaunchedEffect(filterRequest, homeComicState.revision) {
-            filterRequest?.let { comicViewModel.filterHomeCategory(it) }
-        }
-        val matchingFilterState = homeFilteredState.takeIf { it.request == filterRequest }
-        val checkingTags = allExcludedTags.isNotEmpty() && filterRequest != null &&
-            (matchingFilterState == null || matchingFilterState.isLoading)
-        val comicList = matchingFilterState?.result?.comics
-            ?: if (allExcludedTags.isEmpty()) currentPageData?.list.orEmpty() else emptyList()
-        val unresolvedCount = matchingFilterState?.result?.unresolvedCount ?: 0
-        val filterError = matchingFilterState?.errorMsg.takeIf { allExcludedTags.isNotEmpty() }
-        // 标签检查完成后再预热收藏信息。
-        val loadingMore = matchingFilterState?.isLoadingMore == true
-        LaunchedEffect(filterScrollAnchor, matchingFilterState) {
-            val anchor = filterScrollAnchor ?: return@LaunchedEffect
-            if (matchingFilterState?.result != null && !matchingFilterState.isLoading && !loadingMore) {
-                val positions = comicList.mapIndexed { index, comic -> comic.id to index + 1 }.toMap()
-                val index = if (anchor.index == 0) 0 else {
-                    anchor.comicIds.firstNotNullOfOrNull { positions[it] } ?: anchor.index.coerceAtMost(comicList.size)
-                }
-                gridState.requestScrollToItem(index, anchor.offset)
-                filterScrollAnchor = null
-            }
-        }
-        val nearEnd by remember(gridState) {
-            derivedStateOf {
-                val info = gridState.layoutInfo
-                info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 6
-            }
-        }
-        LaunchedEffect(filterRequest, comicList.size, nearEnd, checkingTags, loadingMore, filterScrollAnchor, matchingFilterState?.hasMore,
-            matchingFilterState?.loadMoreError, matchingFilterState?.autoFillPaused, homeComicState.isLoading) {
-            if (filterRequest != null && filterScrollAnchor == null && nearEnd && comicList.size >= 20 && !checkingTags && !loadingMore &&
-                !homeComicState.isLoading && matchingFilterState?.hasMore == true &&
-                matchingFilterState.loadMoreError == null && !matchingFilterState.autoFillPaused) {
-                comicViewModel.loadMoreHomeCategory(filterRequest)
-            }
-        }
-        LaunchedEffect(homeComicState.isLoading, checkingTags, loadingMore, isLogin, localSetting.comicApiSource) {
-            if (!homeComicState.isLoading && !checkingTags && !loadingMore && comicList.isNotEmpty() && isLogin) {
-                userViewModel.preloadFavoritesAfterHome(context, imageLoader)
-            }
+        val comicList = remember(currentPageData, allExcludedTags) {
+            (currentPageData?.list ?: listOf()).filterBlockedTags(allExcludedTags)
         }
         val chipsScrollState = rememberScrollState()
+        val pagination = rememberComicListPagination(
+            comicList.size,
+            selectedTabIndex to allExcludedTags,
+        )
+        val pageComics = comicList.drop(pagination.firstIndex).take(pagination.limit)
+        val nextPageComics = remember(comicList, pagination.state.page, pagination.state.hasNext) {
+            if (pagination.state.hasNext) {
+                comicList.drop(pagination.firstIndex + pagination.limit).take(COMIC_DISPLAY_PAGE_SIZE)
+            } else {
+                emptyList()
+            }
+        }
+        ComicCoverPreloadEffect(nextPageComics, enabled = !homeComicState.isLoading)
         PullToRefreshBox(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             isRefreshing = homeComicState.isLoading,
             onRefresh = { comicViewModel.getHomeComic() }
         ) {
             LazyVerticalGrid(
                 modifier = Modifier
                     .fillMaxSize()
+                    .revealComicPage(
+                        selectedTabIndex to pagination.state.page,
+                        ready = pageComics.isNotEmpty(),
+                    )
                     .pointerInput(selectedTabIndex, categories.map { it.id }) {
                         awaitEachGesture {
                             val down = awaitFirstDown(requireUnconsumed = false)
@@ -345,11 +316,10 @@ fun HomeScreen(
                         )
                     }
                 }
-                items(items = comicList, key = { it.id }) {
+                items(items = pageComics, key = { it.id }) {
                     Comic(it)
                 }
-                if (!homeComicState.isLoading && (!loadingMore || checkingTags) &&
-                    (checkingTags || comicList.isEmpty() || unresolvedCount > 0 || filterError != null)) {
+                if (comicList.isEmpty() && !homeComicState.isLoading) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Column(
                             modifier = Modifier
@@ -358,62 +328,23 @@ fun HomeScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            if (checkingTags) {
-                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                            } else Icon(
+                            Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                             )
                             Text(
-                                text = when {
-                                    checkingTags -> "正在检查漫画标签 ${matchingFilterState?.checkedCount ?: 0}/${matchingFilterState?.totalCount ?: currentPageData?.list?.size ?: 0}…"
-                                    filterError != null -> filterError
-                                    homeComicState.isError -> homeComicState.errorMsg ?: "首页加载失败"
-                                    unresolvedCount > 0 -> "$unresolvedCount 部漫画标签检查失败，暂未显示"
-                                    allExcludedTags.isNotEmpty() -> "已加载的漫画均被标签排除过滤"
-                                    else -> "暂无漫画"
-                                },
+                                text = if (allExcludedTags.isNotEmpty()) "当前分类的漫画均被标签排除过滤" else "暂无漫画",
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (!checkingTags && (unresolvedCount > 0 || filterError != null) && filterRequest != null) {
-                                TextButton(onClick = { comicViewModel.filterHomeCategory(filterRequest, forceRefresh = true) }) {
-                                    Text("重新检查标签")
-                                }
-                            } else if (allExcludedTags.isNotEmpty() && !checkingTags && !homeComicState.isError) {
+                            if (allExcludedTags.isNotEmpty()) {
                                 Text(
                                     text = "可在 设置 → 标签排除 中调整",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 )
-                            }
-                        }
-                    }
-                }
-                if (matchingFilterState != null && filterRequest != null && !checkingTags && !homeComicState.isLoading) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            when {
-                                loadingMore -> {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                    Text("正在补充漫画…")
-                                }
-                                matchingFilterState.loadMoreError != null -> {
-                                    Text(matchingFilterState.loadMoreError, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    TextButton(onClick = { comicViewModel.loadMoreHomeCategory(filterRequest) }) { Text("重试加载") }
-                                }
-                                matchingFilterState.hasMore -> {
-                                    TextButton(onClick = { comicViewModel.loadMoreHomeCategory(filterRequest) }) {
-                                        Text(if (matchingFilterState.autoFillPaused) "继续补充漫画" else "加载更多")
-                                    }
-                                }
-                                comicList.isNotEmpty() -> Text("没有更多漫画了", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -424,6 +355,15 @@ fun HomeScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(16.dp),
+            )
+        }
+        if (pagination.state.enabled) {
+            ComicPaginationBar(
+                state = pagination.state,
+                onPageChange = { page ->
+                    pagination.onPageChange(page)
+                    scope.launch { gridState.scrollToItem(0) }
+                },
             )
         }
     }
@@ -539,7 +479,9 @@ private fun HomeCategoryChips(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(
-            modifier = Modifier.weight(1f).horizontalScroll(scrollState),
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(scrollState),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             categories.forEachIndexed { index, category ->

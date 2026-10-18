@@ -29,6 +29,7 @@ import com.par9uet.jm.ui.screens.UserCollectComicScreen
 import com.par9uet.jm.ui.screens.UserScreen
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.UserManager
+import com.par9uet.jm.ui.theme.LocalAppMotion
 import org.koin.compose.getKoin
 
 @Composable
@@ -38,6 +39,7 @@ fun TabScreen(
     localSettingManager: LocalSettingManager = getKoin().get()
 ) {
     val tabNavController = rememberNavController()
+    val motion = LocalAppMotion.current
     val mainNavController = LocalMainNavController.current
     val navBackStackEntry by tabNavController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -82,6 +84,10 @@ fun TabScreen(
                     NavHost(
                         modifier = Modifier.weight(1f),
                         navController = tabNavController,
+                        enterTransition = { motion.enter() },
+                        exitTransition = { motion.exit() },
+                        popEnterTransition = { motion.enter(back = true) },
+                        popExitTransition = { motion.exit(back = true) },
                         startDestination = tabName
                     ) {
                         composable("home") {

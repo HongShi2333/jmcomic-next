@@ -3,8 +3,6 @@ package com.par9uet.jm.retrofit.model
 import com.google.gson.annotations.SerializedName
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.HomeComicSwiperItem
-import com.par9uet.jm.data.models.HomeCategoryPageKind
-import com.par9uet.jm.data.models.HomeCategoryPageSource
 
 class HomeSwiperComicListItemResponse(
     val id: String,
@@ -42,40 +40,30 @@ class HomeSwiperComicListItemResponse(
         return HomeComicSwiperItem(
             id = id,
             title = title,
-            list = content.map { it.toComic() },
-            pageSource = when {
-                type == "builtin" && id != "builtin_random" ->
-                    HomeCategoryPageSource(HomeCategoryPageKind.BUILTIN, id, 2)
-                type == "category_id" && slug.isNotBlank() ->
-                    HomeCategoryPageSource(HomeCategoryPageKind.CATEGORY, slug, 1)
-                id.removePrefix("pref_").toIntOrNull() != null ->
-                    HomeCategoryPageSource(HomeCategoryPageKind.PROMOTE, id.removePrefix("pref_"), 0)
-                else -> null
-            },
+            list = content.map {
+                Comic(
+                    id = it.id.toInt(),
+                    name = it.name,
+                    authorList = listOf(it.author),
+                    description = it.description ?: "",
+                    readCount = 0,
+                    likeCount = 0,
+                    commentCount = 0,
+                    tagList = listOfNotNull(it.tags, it.hidden_tags)
+                        .flatten()
+                        .filter { tag -> tag.isNotBlank() }
+                        .distinct(),
+                    roleList = listOf(),
+                    workList = listOf(),
+                    isLike = false,
+                    isCollect = false,
+                    relateComicList = listOf(),
+                    comicChapterList = listOf(),
+                    coverUrl = it.image,
+                    price = 0,
+                    isBuy = false,
+                )
+            }
         )
     }
 }
-
-fun HomeSwiperComicListItemResponse.ListItem.toComic(): Comic =
-    Comic(
-        id = id.toInt(),
-        name = name,
-        authorList = listOf(author),
-        description = description ?: "",
-        readCount = 0,
-        likeCount = 0,
-        commentCount = 0,
-        tagList = listOfNotNull(tags, hidden_tags)
-            .flatten()
-            .filter { tag -> tag.isNotBlank() }
-            .distinct(),
-        roleList = listOf(),
-        workList = listOf(),
-        isLike = false,
-        isCollect = false,
-        relateComicList = listOf(),
-        comicChapterList = listOf(),
-        coverUrl = image,
-        price = 0,
-        isBuy = false,
-    )

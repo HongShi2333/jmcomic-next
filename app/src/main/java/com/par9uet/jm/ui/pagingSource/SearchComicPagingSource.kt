@@ -1,35 +1,50 @@
 package com.par9uet.jm.ui.pagingSource
 
-import androidx.paging.PagingSource
-import androidx.paging.PagingState
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
+import com.par9uet.jm.data.models.ComicSearchRequest
+import com.par9uet.jm.network.TIMED_WEB_PAGE_SIZE
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.repository.ComicTagFilter
 import com.par9uet.jm.retrofit.model.ComicListResponse
 import com.par9uet.jm.retrofit.model.NetWorkResult
+import com.par9uet.jm.utils.filterBlockedTags
 import com.par9uet.jm.utils.normalizeSearchExcludedTags
 
 data class SearchComicFilter(
     val order: ComicSearchOrderFilter = ComicSearchOrderFilter.NEWEST,
     val searchContent: String = "",
     val excludedTags: List<String> = emptyList(),
+    val mainTag: Int = 0,
+    val apiSource: String = "",
 )
 
 class SearchComicPagingSource(
     private val comicRepository: ComicRepository,
     private val filter: SearchComicFilter,
-    private val tagFilter: ComicTagFilter = ComicTagFilter(comicRepository::getComicDetail),
+    private val onFindSingleComicId: (id: Int?) -> Unit = {},
+    private val tagFilter: ComicTagFilter? = null,
     private val tagSource: String = "default",
-    private val onFindSingleComicId: (id: Int?) -> Unit = {}
-) : PagingSource<Int, Comic>() {
-
+) : ComicRemotePagingSource() {
+    override val hasLocalFilters: Boolean get() = filter.excludedTags.isNotEmpty()
+    override val remotePageSize: Int
+        get() = if (ComicSearchRequest.from(
+            buildSearchQuery(filter.searchContent, normalizeSearchExcludedTags(filter.excludedTags)),
+            filter.mainTag, filter.order,
+        ).usesWebTimeRanking) TIMED_WEB_PAGE_SIZE else 80
+    override val supportsNetworkPreload: Boolean
+        get() = normalizeSearchExcludedTags(filter.excludedTags).size <= 1
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
         val currentPage = params.key ?: 1
         val excludedTags = normalizeSearchExcludedTags(filter.excludedTags)
         val searchQuery = buildSearchQuery(filter.searchContent, excludedTags)
         return when (val data =
-            comicRepository.getComicList(currentPage, filter.order, searchQuery)) {
+            comicRepository.getComicListWithMainTag(
+                page = currentPage,
+                order = filter.order,
+                searchContent = searchQuery,
+                mainTag = filter.mainTag,
+            )) {
             is NetWorkResult.Error -> {
                 LoadResult.Error(Exception(data.message))
             }
@@ -37,39 +52,53 @@ class SearchComicPagingSource(
             is NetWorkResult.Success<ComicListResponse> -> {
                 if (data.data.redirect_aid != null) {
                     val redirectId = data.data.redirect_aid.toInt()
-                    val checked = tagFilter.filter(
-                        listOf(Comic.create(redirectId, "", emptyList())), excludedTags, tagSource,
-                    )
-                    if (checked.unresolvedCount > 0) {
-                        onFindSingleComicId(null)
-                        return LoadResult.Error(Exception("漫画标签检查失败，请重试"))
+                    val allowed = if (excludedTags.isEmpty()) {
+                        true
+                    } else {
+                        (tagFilter ?: ComicTagFilter(comicRepository::getComicDetail))
+                            .filter(
+                                candidates = listOf(Comic.create(redirectId, "", emptyList())),
+                                excludedTags = excludedTags,
+                                source = tagSource,
+                            )
+                            .comics
+                            .isNotEmpty()
                     }
-                    onFindSingleComicId(redirectId.takeIf { checked.comics.isNotEmpty() })
+                    if (currentPage == 1) {
+                        onFindSingleComicId(redirectId.takeIf { allowed })
+                    }
                     LoadResult.Page(
                         data = listOf(),
                         prevKey = null,
                         nextKey = null
                     )
                 } else {
-                    onFindSingleComicId(null)
-                    val checked = tagFilter.filter(data.data.toComicList(), excludedTags, tagSource)
-                    if (checked.comics.isEmpty() && checked.unresolvedCount > 0) {
-                        return LoadResult.Error(Exception("漫画标签检查失败，请重试"))
-                    }
-                    val list = checked.comics
-                    val total = data.data.total.toInt()
-                    val isLastPage = currentPage >= (total + params.loadSize - 1) / params.loadSize
-                    LoadResult.Page(
+                    if (currentPage == 1) onFindSingleComicId(null)
+                    val list = filterExcludedComics(data.data.toComicList(), excludedTags)
+                    remotePage(
+                        page = currentPage,
                         data = list,
-                        prevKey = if (currentPage == 1) null else currentPage - 1,
-                        nextKey = if (isLastPage) null else currentPage + 1
+                        remoteCount = data.data.content.size,
+                        total = data.data.total.toIntOrNull(),
                     )
                 }
             }
         }
     }
 
-    override fun getRefreshKey(state: PagingState<Int, Comic>): Int? = null
+    private suspend fun filterExcludedComics(
+        candidates: List<Comic>,
+        excludedTags: List<String>
+    ): List<Comic> {
+        if (candidates.isEmpty() || excludedTags.isEmpty()) return candidates
+
+        val list = candidates.filterBlockedTags(excludedTags)
+        if (excludedTags.size <= 1 || list.isEmpty()) return list
+
+        return (tagFilter ?: ComicTagFilter(comicRepository::getComicDetail))
+            .filter(list, excludedTags, tagSource)
+            .comics
+    }
 
     private fun buildSearchQuery(searchContent: String, excludedTags: List<String>): String {
         val baseQuery = searchContent.trim().replace(Regex("\\s+"), " ")

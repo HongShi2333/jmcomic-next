@@ -136,7 +136,10 @@ class LocalSettingStorage(
                     },
                     blockedTagList = flattenBlockedTagTemplates(migratedTemplates),
                     blockedTagTemplateList = migratedTemplates,
-                    homeCategoryOrder = saved.homeCategoryOrder.orEmpty().filter(String::isNotBlank).distinct(),
+                    homeCategoryOrder = saved.homeCategoryOrder
+                        .orEmpty()
+                        .filter(String::isNotBlank)
+                        .distinct(),
                     appLockPassword = savedPassword,
                     appLockPasswordLength = savedPasswordLength,
                     appLockPattern = savedPattern,
@@ -239,6 +242,14 @@ class LocalSettingStorage(
                     } else {
                         DEFAULT_COVER_CACHE_DURATION_HOURS
                     },
+                    readerBrightnessEnabled = savedJson.hasField("readerBrightnessEnabled") && saved.readerBrightnessEnabled,
+                    readerLongPressSaveEnabled = savedJson.hasField("readerLongPressSaveEnabled") && saved.readerLongPressSaveEnabled,
+                    readerLightBrightnessPercent = if (savedJson.hasField("readerLightBrightnessPercent")) {
+                        saved.readerLightBrightnessPercent.coerceIn(1, 100)
+                    } else 100,
+                    readerDarkBrightnessPercent = if (savedJson.hasField("readerDarkBrightnessPercent")) {
+                        saved.readerDarkBrightnessPercent.coerceIn(1, 100)
+                    } else 30,
                     woodenFishCount = if (savedJson.hasField("woodenFishCount")) {
                         saved.woodenFishCount.coerceAtLeast(0L)
                     } else {

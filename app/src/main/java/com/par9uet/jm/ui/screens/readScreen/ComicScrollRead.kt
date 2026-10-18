@@ -173,10 +173,12 @@ fun ComicScrollRead(
     ) {
         LazyColumn(
             state = lazyListState,
-            userScrollEnabled = true,
+            userScrollEnabled = !zoomState.isZoomed,
             modifier = Modifier
                 .fillMaxSize()
-                .readerZoomable(zoomState, enableVerticalPan = false)
+                .readerZoomable(zoomState, enableVerticalPan = false) {
+                    lazyListState.dispatchRawDelta(it)
+                }
         ) {
             itemsIndexed(list, key = { _, item ->
                 "${item.comicId}_${item.originSrc}"

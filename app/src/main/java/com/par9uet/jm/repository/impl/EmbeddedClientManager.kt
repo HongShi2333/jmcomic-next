@@ -21,9 +21,8 @@ import java.util.concurrent.TimeUnit
  * 这样 login() 设置的 loggedInUserName 和内部 Cookie 状态可以被所有 Repository 共享。
  * 解决内置 API 模式下 POST 请求（如创建收藏夹）返回 401 "請先登入會員" 的问题。
  *
- * Android 6 兼容：JmDomainManager 的域名探活使用 CompletableFuture.runAsync（ForkJoinPool），
- * 在 Android 6 上可能初始化失败导致 blockUntilInitialized 永久阻塞。
- * 此处在创建客户端后启动守护线程，超时后强制解除阻塞。
+ * Android 6 uses verified bootstrap domains immediately, then updates domains in
+ * a daemon thread. Startup never waits for the library's background probe to finish.
  */
 class EmbeddedClientManager(
     private val cookieStorage: CookieStorage,
@@ -31,15 +30,15 @@ class EmbeddedClientManager(
 ) {
     /** Android 6 fallback list; Android 7+ can use the library's dynamic list. */
     private val androidCompatibleApiDomains = listOf(
-        "www.cdnaspa.vip",
-        "www.cdnaspa.club",
-        "www.cdnplaystation6.org",
-        "www.cdnplaystation6.vip",
-        "www.cdnplaystation6.cc",
+        "www.cdngwc.net",
+        "www.cdngwc.club",
+        "www.cdnhjk.net",
+        "www.cdngwc.cc",
     )
 
-    @Volatile
-    private var favoriteOrder: String = "mr"
+    // The Java API executes getFavorites synchronously. Bind its missing sort
+    // parameter to that request thread, not shared state changed by preloading.
+    private val favoriteOrder = ThreadLocal<String>()
 
     @Volatile
     private var client: JmApiClient? = null
@@ -50,8 +49,14 @@ class EmbeddedClientManager(
         }
     }
 
-    fun setFavoriteOrder(order: String) {
-        favoriteOrder = order
+    fun <T> withFavoriteOrder(order: String, block: () -> T): T {
+        val previous = favoriteOrder.get()
+        favoriteOrder.set(order)
+        return try {
+            block()
+        } finally {
+            if (previous == null) favoriteOrder.remove() else favoriteOrder.set(previous)
+        }
     }
 
     private fun createClient(): JmApiClient {
@@ -63,9 +68,7 @@ class EmbeddedClientManager(
             .downloadThreadPoolSize(2)
             .domainProbeTimeoutMs(1500)
         if (legacyAndroid) {
-            // Android 6 lacks the platform Java 9/CompletableFuture surface used
-            // by the library's dynamic domain bootstrap. Desugaring still lets
-            // requests run, but explicit domains avoid the fragile bootstrap.
+            // Java APIs are desugared; explicit seeds also cover background bootstrap failure.
             configBuilder.apiDomains(androidCompatibleApiDomains)
         }
         val config = configBuilder.build()
@@ -85,10 +88,10 @@ class EmbeddedClientManager(
                 val cookies = cookieStorage.get()
                 val original = chain.request()
                 val requestBuilder = original.newBuilder()
-                if (original.url.encodedPath.endsWith("/favorite")) {
+                if (original.method == "GET" && original.url.encodedPath.endsWith("/favorite")) {
                     requestBuilder.url(
                         original.url.newBuilder()
-                            .setQueryParameter("o", favoriteOrder)
+                            .setQueryParameter("o", favoriteOrder.get() ?: "mr")
                             .build()
                     )
                 }
@@ -117,20 +120,18 @@ class EmbeddedClientManager(
         val jmClient = JmApiClient(config, clientWithCookieInjection, context.cookieManager, domainManager)
 
         if (legacyAndroid) {
-            // Android 6 only: domain probing can block on the desugared
-            // CompletableFuture/ForkJoin implementation. Newer Android keeps
-            // the library's normal probing and retry behavior.
+            domainManager.setInitialized(true)
             Thread({
                 try {
-                    Thread.sleep(8000)
-                    if (!domainManager.isInitialized) {
-                        log("EmbeddedClientManager: 域名探活初始化超时，强制解除阻塞")
-                        domainManager.setInitialized(true)
-                    }
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
+                    jmClient.updateDomains()
+                } catch (error: Exception) {
+                    log("EmbeddedClientManager: 域名更新失败，保留启动线路：${error.message}")
+                } catch (error: LinkageError) {
+                    log("EmbeddedClientManager: 旧版系统域名更新兼容回退：${error.message}")
+                } finally {
+                    domainManager.setInitialized(true)
                 }
-            }, "embedded-domain-init-guard").apply {
+            }, "embedded-legacy-domain-update").apply {
                 isDaemon = true
                 start()
             }

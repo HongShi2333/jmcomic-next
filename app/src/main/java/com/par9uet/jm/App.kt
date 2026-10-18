@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,15 +67,15 @@ fun App(
     var isLocked by remember { mutableStateOf(true) }
     // 冷启动尚未解锁时不创建业务页面；解锁过一次后保留页面组合，确保系统文件选择器回调不丢失。
     var hasUnlockedOnce by remember { mutableStateOf(false) }
-    var settingsLoaded by remember { mutableStateOf(false) }
+    val settingsLoaded by localSettingManager.initializedState.collectAsState()
     // NSFW 警告本次会话是否已处理
     var sessionNsfwDismissed by remember { mutableStateOf(false) }
     // 首次启动引导
     var showOnboarding by remember { mutableStateOf(false) }
     // 应用锁通过后才启动开屏动画；首页首批数据到达后自动关闭。
-    var splashStarted by remember { mutableStateOf(false) }
-    var splashVisible by remember { mutableStateOf(false) }
-    var splashSkipVisible by remember { mutableStateOf(false) }
+    var splashStarted by rememberSaveable { mutableStateOf(false) }
+    var splashVisible by rememberSaveable { mutableStateOf(false) }
+    var splashSkipVisible by rememberSaveable { mutableStateOf(false) }
     val homeComicState by comicViewModel.homeComicState.collectAsState()
 
     fun enterDuressMode() {
@@ -86,7 +87,6 @@ fun App(
     // 应用锁配置只依赖本地存储：先读取并决定是否锁屏，再启动其余初始化任务。
     LaunchedEffect(Unit) {
         runCatching { localSettingManager.init() }
-        settingsLoaded = true
         // 首次启动且未完成引导时显示欢迎页
         if (!localSettingManager.localSettingState.value.onboardingCompleted) {
             showOnboarding = true
@@ -107,17 +107,27 @@ fun App(
         showOnboarding,
         hasUnlockedOnce,
         localSetting.splashLoadingEnabled,
-        homeComicState.list.isNotEmpty()
+        splashVisible,
+        splashSkipVisible,
     ) {
-        if (!settingsLoaded || showOnboarding || !hasUnlockedOnce || splashStarted) {
+        if (!settingsLoaded || showOnboarding || !hasUnlockedOnce) {
             return@LaunchedEffect
         }
-        splashStarted = true
-        if (!localSetting.splashLoadingEnabled) return@LaunchedEffect
-        splashVisible = true
-        kotlinx.coroutines.delay(1000L)
-        if (splashVisible && homeComicState.list.isEmpty()) {
-            splashSkipVisible = true
+        if (!localSetting.splashLoadingEnabled) {
+            splashStarted = true
+            splashVisible = false
+            splashSkipVisible = false
+            return@LaunchedEffect
+        }
+        if (!splashStarted) {
+            splashStarted = true
+            splashVisible = true
+        }
+        if (splashVisible && !splashSkipVisible) {
+            kotlinx.coroutines.delay(1000L)
+            if (splashVisible) {
+                splashSkipVisible = true
+            }
         }
     }
 

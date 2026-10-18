@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 下载的 APK 保存在 cacheDir/common/updates/ 下 -->
+    <cache-path name="common_updates" path="common/updates/" />
+    <cache-path name="updates" path="updates/" />
+    <external-cache-path name="external_common_updates" path="common/updates/" />
+    <external-cache-path name="external_updates" path="updates/" />
+</paths>

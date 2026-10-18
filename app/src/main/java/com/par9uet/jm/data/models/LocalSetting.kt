@@ -74,6 +74,11 @@ data class LocalSetting(
     val chapterReadingMemoryEnabled: Boolean = true,
     // 阅读页是否使用实体音量键翻页，默认关闭
     val volumeKeyPageTurningEnabled: Boolean = false,
+    val readerBrightnessEnabled: Boolean = false,
+    // Opt in: a long press only opens a save confirmation, never writes immediately.
+    val readerLongPressSaveEnabled: Boolean = false,
+    val readerLightBrightnessPercent: Int = 100,
+    val readerDarkBrightnessPercent: Int = 30,
     // 封面缓存复用时长：0 表示不缓存，最高三天。
     val coverCacheDurationHours: Int = DEFAULT_COVER_CACHE_DURATION_HOURS,
     val launcherDisguise: String = "default",
@@ -132,6 +137,7 @@ data class LocalSetting(
     val customColorError: String? = null,
     // 网格列数：0 表示自适应，2-6 表示固定列数
     val homeGridColumns: Int = 0,
+    // 首页分类排序：空列表表示使用服务端默认顺序
     val homeCategoryOrder: List<String> = emptyList(),
     val collectGridColumns: Int = 0,
     val downloadGridColumns: Int = 0,

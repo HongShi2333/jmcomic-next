@@ -2,9 +2,16 @@ package com.par9uet.jm.ui.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -14,8 +21,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -26,6 +35,7 @@ import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
+import com.par9uet.jm.ui.theme.LocalAppMotion
 import org.koin.compose.getKoin
 import org.koin.compose.viewmodel.koinActivityViewModel
 
@@ -45,9 +55,22 @@ fun Comic(
     val clipboardManager = LocalClipboardManager.current
     val toastManager: ToastManager = getKoin().get()
     val localSetting by localSettingManager.localSettingState.collectAsState()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val motion = LocalAppMotion.current
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed && motion.enabled) 0.98f else 1f,
+        animationSpec = tween(if (motion.enabled) 100 else 0),
+        label = "comic-press",
+    )
 
     Card(
-        modifier = modifier.combinedClickable(
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+            .combinedClickable(
+            interactionSource = interaction,
+            indication = LocalIndication.current,
             onClick = {
                 if (editing && onToggleSelected != null) {
                     onToggleSelected()
@@ -70,10 +93,11 @@ fun Comic(
         ),
     ) {
         Column(
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Box {
-                ComicCoverImage(comic)
+                ComicCoverImage(comic, modifier = Modifier.fillMaxWidth())
                 if (editing && selected) {
                     Checkbox(
                         checked = true,
@@ -86,16 +110,21 @@ fun Comic(
             }
             Text(
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .height(20.dp)
                     .padding(horizontal = 8.dp),
                 text = comic.name,
                 color = MaterialTheme.colorScheme.onSurface,
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 1,
+                softWrap = false,
                 fontSize = 13.sp,
                 lineHeight = 16.sp,
             )
             Text(
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .height(20.dp)
                     .padding(horizontal = 8.dp)
                     .padding(bottom = 8.dp),
                 text = if (localSetting.showComicIdAsSubtitle) {
@@ -108,6 +137,7 @@ fun Comic(
                 lineHeight = 12.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
         }

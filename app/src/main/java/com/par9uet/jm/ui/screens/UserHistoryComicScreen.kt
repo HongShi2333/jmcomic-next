@@ -36,9 +36,12 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import com.par9uet.jm.ui.components.Comic
+import com.par9uet.jm.ui.components.ComicPaginationBar
+import com.par9uet.jm.ui.components.ComicPagePreloadEffect
 import com.par9uet.jm.ui.components.ComicSkeleton
 import com.par9uet.jm.ui.components.CommonScaffold
 import com.par9uet.jm.ui.components.PullRefreshAndLoadMoreGrid
+import com.par9uet.jm.ui.components.rememberComicPageGridState
 import com.par9uet.jm.ui.components.adaptiveComicGridCells
 import com.par9uet.jm.store.LocalSettingManager
 import org.koin.compose.getKoin
@@ -79,9 +82,16 @@ fun UserHistoryComicScreen(
     localSettingManager: LocalSettingManager = getKoin().get(),
 ) {
     val historyComicLazyPagingItems = userViewModel.historyComicPager.collectAsLazyPagingItems()
+    val pageState by userViewModel.historyPagination.state.collectAsState()
     val historyEditState by userViewModel.historyEditState.collectAsState()
     val localSetting by localSettingManager.localSettingState.collectAsState()
+    val comicGridState = rememberComicPageGridState(pageState.page, localSetting.blockedTagList)
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    ComicPagePreloadEffect(
+        controller = userViewModel.historyPagination,
+        ready = historyComicLazyPagingItems.itemCount > 0 &&
+            historyComicLazyPagingItems.loadState.refresh is LoadState.NotLoading,
+    )
 
     val selectedComics: List<com.par9uet.jm.data.models.Comic> = remember(historyComicLazyPagingItems.itemSnapshotList, historyEditState.selectedComicIds) {
         historyComicLazyPagingItems.itemSnapshotList.filterNotNull().filter { it.id in historyEditState.selectedComicIds }
@@ -106,14 +116,28 @@ fun UserHistoryComicScreen(
                     )
                 }
                 if (historyComicLazyPagingItems.loadState.refresh is LoadState.Loading && historyComicLazyPagingItems.itemCount == 0) {
-                    UserHistoryComicSkeleton()
+                    androidx.compose.foundation.layout.Box(modifier = Modifier.weight(1f)) {
+                        UserHistoryComicSkeleton()
+                    }
+                    if (pageState.enabled) {
+                        ComicPaginationBar(
+                            state = pageState,
+                            onPageChange = userViewModel.historyPagination::selectPage,
+                        )
+                    }
                 } else {
                     PullRefreshAndLoadMoreGrid(
-                        modifier = Modifier.fillMaxSize(),
+                        gridState = comicGridState,
+                        modifier = Modifier.weight(1f),
                         lazyPagingItems = historyComicLazyPagingItems,
                         key = { it.id },
                         columns = adaptiveComicGridCells(localSetting.historyGridColumns),
                         enablePullRefresh = false,
+                        pageState = pageState,
+                        onPageChange = { page ->
+                            userViewModel.clearHistorySelection()
+                            userViewModel.historyPagination.selectPage(page)
+                        },
                     ) { comic ->
                         Comic(
                             comic = comic,

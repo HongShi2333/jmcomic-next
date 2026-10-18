@@ -14,21 +14,8 @@ val versionProps = Properties().apply {
     }
 }
 
-val secretProps = Properties().apply {
-    val file = rootProject.file("secrets.properties")
-    if (file.exists()) file.inputStream().use { load(it) }
-}
-
 val versionCodeProp = versionProps.getProperty("VERSION_CODE", "1").toIntOrNull()
 val versionNameProp: String = versionProps.getProperty("VERSION_NAME", "1.1.0")
-
-// Secrets are supplied through untracked Gradle properties or CI variables.
-// Nothing sensitive is committed to this public source package.
-fun secretProperty(name: String): String =
-    providers.gradleProperty(name).orNull
-        ?: providers.environmentVariable(name).orNull
-        ?: secretProps.getProperty(name)
-        ?: ""
 
 fun getGitHash() = providers
     .exec {
@@ -46,10 +33,9 @@ fun getGitHash() = providers
 androidComponents {
     onVariants { variant ->
         val hash = getGitHash()
-        val fileName = "jm-mobile_v${versionNameProp}_${hash}.apk"
         variant.outputs.forEach { output ->
             if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
-                output.outputFileName.set(fileName)
+                output.outputFileName.set("jm-mobile_v${versionNameProp}_${hash}.apk")
             }
         }
     }
@@ -72,8 +58,6 @@ android {
         targetSdk = 35
         versionCode = versionCodeProp
         versionName = versionNameProp
-        buildConfigField("String", "JM_BUILTIN_TOKEN_SECRET", "\"${secretProperty("JM_BUILTIN_TOKEN_SECRET")}\"")
-        buildConfigField("String", "JM_APP_DATA_SECRET", "\"${secretProperty("JM_APP_DATA_SECRET")}\"")
 
         // testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -85,6 +69,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -98,7 +83,6 @@ android {
     }
     buildFeatures {
         compose = true
-        buildConfig = true
     }
     packaging {
         resources {

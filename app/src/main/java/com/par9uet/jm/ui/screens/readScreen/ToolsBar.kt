@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
+import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalIconButton
@@ -23,11 +24,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -53,7 +56,12 @@ fun ToolsBar(
     onNextChapter: () -> Unit,
     onPageSelected: (index: Int) -> Unit,
     onResetZoom: () -> Unit = {},
+    brightnessPercent: Int = 100,
+    brightnessOverridden: Boolean = false,
+    onBrightnessChange: (Int) -> Unit = {},
+    onRestoreBrightness: () -> Unit = {},
 ) {
+    var showBrightness by rememberSaveable { mutableStateOf(false) }
     val lastIndex = (pageCount - 1).coerceAtLeast(0)
     val safeIndex = currentIndex.coerceIn(0, lastIndex)
     val currentPage = if (pageCount <= 0) 0 else safeIndex + 1
@@ -116,18 +124,30 @@ fun ToolsBar(
                     }
                 }
             }
-            if (showResetZoom) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(
-                    modifier = Modifier
-                        .align(Alignment.CenterHorizontally),
-                    onClick = onResetZoom
+                    onClick = { showBrightness = !showBrightness },
                 ) {
+                    Icon(Icons.Rounded.Brightness6, contentDescription = null)
+                    Text("亮度 $brightnessPercent%", modifier = Modifier.padding(start = 6.dp))
+                }
+                if (showResetZoom) {
+                    TextButton(onClick = onResetZoom) { Text("还原页面") }
+                }
+            }
+            if (showBrightness) {
+                Slider(
+                    value = brightnessPercent.toFloat(),
+                    onValueChange = { onBrightnessChange(it.roundToInt()) },
+                    valueRange = 1f..100f,
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "还原页面",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
+                        if (brightnessOverridden) "本次阅读亮度" else "跟随阅读设置",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    TextButton(enabled = brightnessOverridden, onClick = onRestoreBrightness) { Text("恢复设置") }
                 }
             }
             PageProgressBar(

@@ -8,6 +8,8 @@ import com.par9uet.jm.data.models.AiChatMessage
 import com.par9uet.jm.data.models.AiChatMessageBranch
 import com.par9uet.jm.data.models.AiPersona
 import com.par9uet.jm.data.models.AiSearchSettings
+import com.par9uet.jm.data.models.withSyncedActiveBranch
+import com.par9uet.jm.data.models.switchBranch
 import com.par9uet.jm.repository.AiChatRepository
 import com.par9uet.jm.repository.OpenAiChatMessage
 import com.par9uet.jm.repository.SearchProgress
@@ -17,6 +19,8 @@ import com.par9uet.jm.storage.PersonaStorage
 import com.par9uet.jm.store.LocalSettingManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -51,6 +55,7 @@ class AiChatViewModel(
     }
 
     data class AiChatUiState(
+        val historyLoading: Boolean = true,
         val conversations: List<AiChatConversation> = emptyList(),
         val activeConversationId: String = "",
         val input: String = "",
@@ -74,24 +79,38 @@ class AiChatViewModel(
     private var sendJob: Job? = null
 
     init {
-        val conversations = aiChatStorage.get()
-        val normalizedConversations = conversations.ifEmpty { listOf(newConversationModel()) }
-            .sortedByDescending { it.updatedAt }
-        aiChatStorage.set(normalizedConversations)
-
-        // 初始化人格列表与激活ID
-        val personas = personaStorage.get()
-        val activePersonaId = personaStorage.getActiveId()
-
-        _uiState.update {
-            it.copy(
-                conversations = normalizedConversations,
-                activeConversationId = normalizedConversations.first().id,
-                searchSettings = aiChatStorage.getSearchSettings(),
-                personas = personas,
-                activePersonaId = activePersonaId
-            )
+        viewModelScope.launch {
+            try {
+                val conversations = withContext(Dispatchers.IO) { aiChatStorage.get() }
+                val normalizedConversations = conversations.ifEmpty { listOf(newConversationModel()) }
+                    .sortedByDescending { it.updatedAt }
+                aiChatStorage.set(normalizedConversations)
+                val personas = personaStorage.get()
+                val activePersonaId = personaStorage.getActiveId()
+                _uiState.update {
+                    it.copy(
+                        conversations = normalizedConversations,
+                        historyLoading = false,
+                        activeConversationId = normalizedConversations.first().id,
+                        searchSettings = aiChatStorage.getSearchSettings(),
+                        personas = personas,
+                        activePersonaId = activePersonaId,
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: StackOverflowError) {
+                _uiState.update { it.copy(errorMessage = "旧聊天分支过深，记录已保留，请先导出备份") }
+            } catch (_: OutOfMemoryError) {
+                _uiState.update { it.copy(errorMessage = "聊天记录过大，暂时无法读取，原记录已保留") }
+            } catch (error: Exception) {
+                _uiState.update { it.copy(errorMessage = error.message ?: "聊天记录读取失败，原记录已保留") }
+            }
         }
+
+        aiChatStorage.writeError.onEach { error ->
+            if (error != null) _uiState.update { it.copy(errorMessage = error) }
+        }.launchIn(viewModelScope)
 
         // 订阅 PersonaStorage 的变化：当用户在人格管理页新建/编辑/删除人格后，
         // AiChatViewModel 会自动收到更新，保证对话页的 PersonaSwitchDialog 列表实时同步。
@@ -170,6 +189,7 @@ class AiChatViewModel(
     }
 
     fun createConversation() {
+        if (_uiState.value.historyLoading || _uiState.value.isSending) return
         val conversation = newConversationModel().copy(
             personaId = _uiState.value.activePersonaId.orEmpty()
         )
@@ -186,6 +206,7 @@ class AiChatViewModel(
     }
 
     fun selectConversation(id: String) {
+        if (_uiState.value.historyLoading || _uiState.value.isSending) return
         _uiState.update {
             it.copy(activeConversationId = id, input = "", errorMessage = null)
         }
@@ -193,6 +214,7 @@ class AiChatViewModel(
 
     fun deleteConversation(id: String) {
         val current = _uiState.value
+        if (current.historyLoading || current.isSending) return
         val remaining = current.conversations.filterNot { it.id == id }
             .ifEmpty { listOf(newConversationModel()) }
             .sortedByDescending { it.updatedAt }
@@ -225,7 +247,7 @@ class AiChatViewModel(
     fun send() {
         val current = _uiState.value
         val text = current.input.trim()
-        if (text.isBlank() || current.isSending) return
+        if (text.isBlank() || current.isSending || current.historyLoading) return
 
         val active = current.conversations.firstOrNull { it.id == current.activeConversationId }
             ?: newConversationModel()
@@ -346,6 +368,10 @@ class AiChatViewModel(
                     followingMessages = currentFollowing
                 )
             )
+        }.mapIndexed { branchIndex, branch ->
+            if (branchIndex == userMessage.activeBranchIndex) {
+                branch.copy(content = userMessage.content, followingMessages = currentFollowing)
+            } else branch
         }
         val assistantMessage = AiChatMessage(
             id = UUID.randomUUID().toString(),
@@ -357,7 +383,7 @@ class AiChatViewModel(
             content = text,
             branches = existingBranches + AiChatMessageBranch(
                 content = text,
-                followingMessages = listOf(assistantMessage)
+                followingMessages = emptyList()
             ),
             activeBranchIndex = nextBranchIndex
         )
@@ -401,28 +427,9 @@ class AiChatViewModel(
         val current = _uiState.value
         if (current.isSending) return
 
-        val active = current.conversations.firstOrNull { it.id == current.activeConversationId }
-            ?.withSyncedActiveBranch()
-            ?: return
-        val userIndex = active.messages.indexOfFirst {
-            it.id == messageId && it.role == "user"
-        }
-        if (userIndex < 0) return
-
-        val userMessage = active.messages[userIndex]
-        val branches = userMessage.branches
-        if (branches.isEmpty() || targetIndex !in branches.indices) return
-
-        val targetBranch = branches[targetIndex]
-        val switchedUserMessage = userMessage.copy(
-            content = targetBranch.content,
-            activeBranchIndex = targetIndex,
-            branches = branches
-        )
-        val nextActive = active.copy(
-            messages = active.messages.take(userIndex) + switchedUserMessage + targetBranch.followingMessages,
-            updatedAt = System.currentTimeMillis()
-        ).withSyncedActiveBranch()
+        val active = current.conversations.firstOrNull { it.id == current.activeConversationId } ?: return
+        val nextActive = active.switchBranch(messageId, targetIndex)
+        if (nextActive === active) return
         val nextConversations = upsertConversation(current.conversations, nextActive)
         persist(nextConversations)
         _uiState.update {
@@ -693,34 +700,8 @@ class AiChatViewModel(
         return next.sortedByDescending { it.updatedAt }
     }
 
-    private fun AiChatConversation.withSyncedActiveBranch(): AiChatConversation {
-        if (messages.none { it.branches.isNotEmpty() }) return this
-        val syncedMessages = messages.mapIndexed { index, message ->
-            if (message.role != "user" || message.branches.isEmpty()) {
-                message
-            } else {
-                val activeIndex = message.activeBranchIndex.coerceIn(message.branches.indices)
-                val syncedBranches = message.branches.mapIndexed { branchIndex, branch ->
-                    if (branchIndex == activeIndex) {
-                        branch.copy(
-                            content = message.content,
-                            followingMessages = messages.drop(index + 1)
-                        )
-                    } else {
-                        branch
-                    }
-                }
-                message.copy(
-                    branches = syncedBranches,
-                    activeBranchIndex = activeIndex
-                )
-            }
-        }
-        return copy(messages = syncedMessages)
-    }
-
     private fun persist(conversations: List<AiChatConversation>) {
-        aiChatStorage.set(conversations.map { it.withSyncedActiveBranch() }.sortedByDescending { it.updatedAt })
+        aiChatStorage.set(conversations.sortedByDescending { it.updatedAt })
     }
 
     private fun todayText(): String {

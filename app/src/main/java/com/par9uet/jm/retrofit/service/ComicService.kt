@@ -6,7 +6,6 @@ import com.par9uet.jm.retrofit.model.ComicListResponse
 import com.par9uet.jm.retrofit.model.CommentComicResponse
 import com.par9uet.jm.retrofit.model.CommentListResponse
 import com.par9uet.jm.retrofit.model.HomeSwiperComicListItemResponse
-import com.par9uet.jm.retrofit.model.HomeComicPageResponse
 import com.par9uet.jm.retrofit.model.LikeComicResponse
 import com.par9uet.jm.retrofit.model.ResponseWrapper
 import com.par9uet.jm.retrofit.model.WeekRecommendComicResponse
@@ -41,12 +40,6 @@ interface ComicService {
     @GET("promote")
     suspend fun getHomeSwiperComicList(): ResponseWrapper<List<HomeSwiperComicListItemResponse>>
 
-    @GET("promote_list")
-    suspend fun getHomePromotePage(@Query("id") id: String, @Query("page") page: Int): ResponseWrapper<HomeComicPageResponse>
-
-    @GET("categories/filter")
-    suspend fun getHomeCategoryPage(@Query("c") category: String, @Query("page") page: Int): ResponseWrapper<HomeComicPageResponse>
-
     @GET("chapter_view_template")
     suspend fun getComicPicList(
         @Query("id") id: Int,
@@ -63,6 +56,25 @@ interface ComicService {
         @Query("page") page: Int,
         @Query("o") order: String,
         @Query("search_query") searchContent: String,
+        @Query("main_tag") mainTag: Int = 0,
+        @Query("t") time: String? = null,
+    ): ResponseWrapper<ComicListResponse>
+
+    @GET("search")
+    suspend fun getComicTagRankList(
+        @Query("page") page: Int,
+        @Query("main_tag") mainTag: Int,
+        @Query("search_query") tagName: String,
+        @Query("o") order: String,
+        @Query("t") time: String,
+    ): ResponseWrapper<ComicListResponse>
+
+    @GET("categories/filter")
+    suspend fun getComicCategoryRankList(
+        @Query("page") page: Int,
+        @Query("order") order: String = "",
+        @Query("c") category: String,
+        @Query("o") orderByTime: String,
     ): ResponseWrapper<ComicListResponse>
 
     @GET("week")

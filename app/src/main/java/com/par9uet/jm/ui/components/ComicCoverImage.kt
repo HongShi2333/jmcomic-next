@@ -1,5 +1,7 @@
 package com.par9uet.jm.ui.components
 
+import android.graphics.drawable.Drawable
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -130,6 +132,7 @@ fun ComicCoverImage(
     comic: Comic,
     modifier: Modifier = Modifier.fillMaxWidth(),
     showIdChip: Boolean = false,
+    copyOnLongPress: Boolean = false,
     remoteSettingManager: RemoteSettingManager = getKoin().get(),
     localSettingManager: LocalSettingManager = getKoin().get(),
     imageLoader: ImageLoader = getKoin().get(),
@@ -151,6 +154,7 @@ fun ComicCoverImage(
 
     Box(modifier = modifier) {
         FallbackAsyncImage(
+            copyOnLongPress = copyOnLongPress,
             coverUrls = coverUrls,
             cacheKey = comicCoverCacheKey(comic.id, localSetting.coverCacheDurationHours),
             cacheEnabled = localSetting.coverCacheDurationHours > 0,
@@ -239,14 +243,17 @@ fun FallbackAsyncImage(
     contentDescription: String?,
     contentScale: ContentScale,
     modifier: Modifier = Modifier,
+    copyOnLongPress: Boolean = false,
 ) {
     val context = LocalContext.current
     var coverIndex by remember(coverUrls) { mutableStateOf(0) }
     val coverUrl = coverUrls.getOrNull(coverIndex)
+    var loadedDrawable by remember(coverUrls) { mutableStateOf<Drawable?>(null) }
     if (coverUrl != null) {
-        val request = remember(context, coverUrl, cacheKey, cacheEnabled) {
+        val request = remember(context, coverUrl, cacheKey, cacheEnabled, copyOnLongPress) {
             ImageRequest.Builder(context)
                 .data(coverUrl)
+                .allowHardware(!copyOnLongPress)
                 .memoryCachePolicy(if (cacheEnabled) CachePolicy.ENABLED else CachePolicy.DISABLED)
                 .diskCachePolicy(if (cacheEnabled) CachePolicy.ENABLED else CachePolicy.DISABLED)
                 .apply {
@@ -262,12 +269,15 @@ fun FallbackAsyncImage(
             imageLoader = imageLoader,
             contentDescription = contentDescription,
             contentScale = contentScale,
+            onSuccess = { loadedDrawable = it.result.drawable },
             onError = {
                 if (coverIndex < coverUrls.lastIndex) {
                     coverIndex += 1
                 }
             },
-            modifier = modifier,
+            modifier = if (copyOnLongPress) {
+                modifier.copyComicCover(contentDescription.orEmpty()) { loadedDrawable?.toBitmap() }
+            } else modifier,
         )
     } else {
         Box(modifier = modifier)

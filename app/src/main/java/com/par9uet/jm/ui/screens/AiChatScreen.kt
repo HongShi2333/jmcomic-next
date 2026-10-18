@@ -277,17 +277,25 @@ private fun AiChatContent(
             modelId = modelId,
             onModelChange = onModelChange
         )
-        MessageList(
-            modifier = Modifier.weight(1f),
-            messages = conversation?.messages.orEmpty(),
-            isSending = uiState.isSending,
-            searchUiState = uiState.searchUiState,
-            lastSearchResults = uiState.lastSearchResults,
-            onRetry = onRetry,
-            onEditUserMessage = onEditUserMessage,
-            onSwitchUserBranch = onSwitchUserBranch,
-            toastManager = toastManager
-        )
+        androidx.compose.runtime.key(conversation?.id) {
+            if (uiState.historyLoading) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(if (uiState.errorMessage == null) "正在读取聊天记录…" else "聊天记录未载入")
+                }
+            } else {
+                MessageList(
+                    modifier = Modifier.weight(1f),
+                    messages = conversation?.messages.orEmpty(),
+                    isSending = uiState.isSending,
+                    searchUiState = uiState.searchUiState,
+                    lastSearchResults = uiState.lastSearchResults,
+                    onRetry = onRetry,
+                    onEditUserMessage = onEditUserMessage,
+                    onSwitchUserBranch = onSwitchUserBranch,
+                    toastManager = toastManager,
+                )
+            }
+        }
         uiState.errorMessage?.let {
             Surface(
                 modifier = Modifier

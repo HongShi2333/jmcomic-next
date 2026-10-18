@@ -20,6 +20,7 @@ import com.par9uet.jm.ui.screens.tabScreen.TabScreen
 import com.par9uet.jm.ui.viewModel.ComicViewModel
 import com.par9uet.jm.utils.EXTRA_NAVIGATE_ROUTE
 import com.par9uet.jm.utils.deserializeExcludedTags
+import com.par9uet.jm.ui.theme.LocalAppMotion
 import org.koin.compose.viewmodel.koinActivityViewModel
 
 @Composable
@@ -29,6 +30,7 @@ fun AppScreen(
 ) {
     val mainNavController = externalNavController ?: rememberNavController()
     val context = LocalContext.current
+    val motion = LocalAppMotion.current
     // 处理从通知点击进入时的目标路由（例如更新下载完成通知）
     LaunchedEffect(Unit) {
         val activity = context.findActivity()
@@ -43,6 +45,10 @@ fun AppScreen(
         NavHost(
             modifier = Modifier.fillMaxSize(),
             navController = mainNavController,
+            enterTransition = { motion.enter() },
+            exitTransition = { motion.exit() },
+            popEnterTransition = { motion.enter(back = true) },
+            popExitTransition = { motion.exit(back = true) },
 //            startDestination = "comicQuickSearch/百合"
 //            startDestination = "appLocalSetting"
             startDestination = "tab/home",
@@ -119,7 +125,7 @@ fun AppScreen(
                 ComicReadScreen(comicId = id)
             }
             composable(
-                route = "comicSearch?searchContent={searchContent}&excludedTags={excludedTags}",
+                route = "comicSearch?searchContent={searchContent}&excludedTags={excludedTags}&mainTag={mainTag}",
                 arguments = listOf(
                     navArgument(name = "searchContent") {
                         type = NavType.StringType
@@ -128,6 +134,10 @@ fun AppScreen(
                     navArgument(name = "excludedTags") {
                         type = NavType.StringType
                         defaultValue = ""
+                    },
+                    navArgument(name = "mainTag") {
+                        type = NavType.IntType
+                        defaultValue = 0
                     }
                 ),
             ) { backStackEntry ->
@@ -135,29 +145,53 @@ fun AppScreen(
                 val excludedTags = deserializeExcludedTags(
                     backStackEntry.arguments?.getString("excludedTags")
                 )
+                val mainTag = backStackEntry.arguments?.getInt("mainTag") ?: 0
                 ComicSearchScreen(
                     initialSearchContent = searchContent,
-                    initialExcludedTags = excludedTags
+                    initialExcludedTags = excludedTags,
+                    initialMainTag = mainTag,
                 )
             }
             composable(route = "extractCode") { ExtractCodeScreen() }
             composable(
-                route = "comicSearchResult/{searchContent}?excludedTags={excludedTags}",
+                route = "comicSearchResult/{searchContent}?excludedTags={excludedTags}&mainTag={mainTag}",
                 arguments = listOf(
                     navArgument(name = "searchContent") { type = NavType.StringType },
                     navArgument(name = "excludedTags") {
                         type = NavType.StringType
                         defaultValue = ""
-                    }
+                    },
+                    navArgument(name = "mainTag") {
+                        type = NavType.IntType
+                        defaultValue = 0
+                    },
                 ),
             ) { backStackEntry ->
                 val searchContent = backStackEntry.arguments?.getString("searchContent") ?: ""
                 val excludedTagsValue = backStackEntry.arguments?.getString("excludedTags") ?: ""
                 val excludedTags = deserializeExcludedTags(excludedTagsValue)
-                LaunchedEffect(searchContent, excludedTagsValue) {
-                    comicViewModel.changeSearchComicContent(searchContent, excludedTags)
+                val mainTag = backStackEntry.arguments?.getInt("mainTag") ?: 0
+                LaunchedEffect(searchContent, excludedTagsValue, mainTag) {
+                    comicViewModel.changeSearchComicContent(searchContent, excludedTags, mainTag)
                 }
                 ComicSearchResultScreen()
+            }
+            composable(
+                route = "comicRanking/{targetType}/{targetValue}?period={period}",
+                arguments = listOf(
+                    navArgument(name = "targetType") { type = NavType.StringType },
+                    navArgument(name = "targetValue") { type = NavType.StringType },
+                    navArgument(name = "period") {
+                        type = NavType.StringType
+                        defaultValue = "week"
+                    },
+                ),
+            ) { backStackEntry ->
+                ComicRankingScreen(
+                    targetType = backStackEntry.arguments?.getString("targetType").orEmpty(),
+                    targetValue = backStackEntry.arguments?.getString("targetValue").orEmpty(),
+                    periodValue = backStackEntry.arguments?.getString("period") ?: "week",
+                )
             }
             composable(route = "comicRecommend") { ComicWeekRecommendScreen() }
             composable(

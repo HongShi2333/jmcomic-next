@@ -1,6 +1,8 @@
 package com.par9uet.jm.ui.screens.downloadScreen
 
 import android.net.Uri
+import android.graphics.drawable.Drawable
+import androidx.core.graphics.drawable.toBitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,6 +54,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,10 +71,15 @@ import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.store.DownloadManager
 import com.par9uet.jm.store.DownloadProgressMessageStore
 import com.par9uet.jm.store.LocalSettingManager
+import com.par9uet.jm.store.ReadHistoryManager
 import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.ChapterSingleSelectDialog
 import com.par9uet.jm.ui.components.ComicContentTag
 import com.par9uet.jm.ui.components.ComicIdChip
+import com.par9uet.jm.ui.components.copyComicText
+import com.par9uet.jm.ui.components.copyComicCover
+import com.par9uet.jm.ui.components.CopyableComicAuthor
+import coil.request.ImageRequest
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.DownloadComicDetailViewModel
 import com.par9uet.jm.utils.CachedComicInfo
@@ -108,6 +117,7 @@ fun DownloadComicDetailScreen(
     toastManager: ToastManager = getKoin().get(),
     downloadManager: DownloadManager = getKoin().get(),
     localSettingManager: LocalSettingManager = getKoin().get(),
+    readHistoryManager: ReadHistoryManager = getKoin().get(),
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -115,6 +125,14 @@ fun DownloadComicDetailScreen(
     val detailState by viewModel.detailState.collectAsState()
     val progressMessages by DownloadProgressMessageStore.messages.collectAsState()
     val localSetting by localSettingManager.localSettingState.collectAsState()
+    val readHistory by readHistoryManager.readHistoryState.collectAsState()
+    val readChapterIds = if (localSetting.chapterReadingMemoryEnabled) {
+        readHistoryManager.readChapterIds(detailState.remoteCoverComicId, readHistory)
+    } else emptySet()
+    val lastReadChapterId = if (localSetting.comicReadingMemoryEnabled) {
+        readHistory[detailState.remoteCoverComicId]?.lastChapterId
+            ?.takeIf { last -> detailState.completeItems.any { it.id == last } }
+    } else null
     val scrollState = rememberScrollState()
     var cachedInfo by remember { mutableStateOf<CachedComicInfo?>(null) }
     var exporting by remember { mutableStateOf(false) }
@@ -154,8 +172,7 @@ fun DownloadComicDetailScreen(
             return@rememberLauncherForActivityResult
         }
         val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
-            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-            android.content.Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         runCatching {
             context.contentResolver.takePersistableUriPermission(uri, flags)
         }
@@ -325,7 +342,8 @@ fun DownloadComicDetailScreen(
             ChapterSingleSelectDialog(
                 title = "选择缓存章节",
                 chapters = detailState.readableChapters,
-                currentChapterId = null,
+                currentChapterId = lastReadChapterId.takeIf { localSetting.chapterReadingMemoryEnabled },
+                readChapterIds = readChapterIds,
                 onDismiss = { activeDialog = null },
                 onSelect = { chapter ->
                     activeDialog = null
@@ -384,7 +402,8 @@ fun DownloadComicDetailScreen(
                             activeDialog = DownloadDetailDialog.ReadChapter
                         },
                         onRead = {
-                            mainNavController.navigate("localComicRead/${detailState.completeItems.first().id}")
+                            val chapter = lastReadChapterId ?: detailState.completeItems.first().id
+                            mainNavController.navigate("localComicRead/$chapter")
                         }
                     )
                 }
@@ -420,6 +439,8 @@ fun DownloadComicDetailScreen(
             LocalCachedTagCard(tags = detailState.tagList)
             LocalCachedChapterDirectoryCard(
                 chapters = detailState.readableChapters,
+                readChapterIds = readChapterIds,
+                lastReadChapterId = lastReadChapterId.takeIf { localSetting.chapterReadingMemoryEnabled },
                 onOpenAll = { activeDialog = DownloadDetailDialog.ReadChapter },
                 onRead = { chapter ->
                     if (chapter.isAvailable) {
@@ -524,6 +545,7 @@ private fun LocalCachedHeroCard(
     detailState: com.par9uet.jm.ui.viewModel.DownloadComicDetailState,
     imageLoader: ImageLoader,
 ) {
+    val navController = LocalMainNavController.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -556,17 +578,18 @@ private fun LocalCachedHeroCard(
             ) {
                 Text(
                     text = detailState.title,
+                    modifier = Modifier.copyComicText(detailState.title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                 )
                 if (detailState.authorList.isNotEmpty()) {
-                    Text(
-                        text = detailState.authorList.joinToString(" · "),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        detailState.authorList.distinct().forEach { author ->
+                            CopyableComicAuthor(author) {
+                                navController.navigate("comicSearchResult/${Uri.encode(author)}")
+                            }
+                        }
+                    }
                 }
                 Text(
                     text = if (detailState.canRead) "已缓存，可直接阅读" else "正在准备缓存内容",
@@ -615,6 +638,8 @@ private fun LocalCachedTagCard(tags: List<String>) {
 @Composable
 private fun LocalCachedChapterDirectoryCard(
     chapters: List<com.par9uet.jm.data.models.ComicChapter>,
+    readChapterIds: Set<Int>,
+    lastReadChapterId: Int?,
     onOpenAll: () -> Unit,
     onRead: (com.par9uet.jm.data.models.ComicChapter) -> Unit,
 ) {
@@ -652,10 +677,11 @@ private fun LocalCachedChapterDirectoryCard(
                 )
             } else {
                 chapters.forEachIndexed { index, chapter ->
-                    val chapterColor = if (chapter.isAvailable) {
-                        MaterialTheme.colorScheme.surfaceContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerLow
+                    val chapterColor = when {
+                        !chapter.isAvailable -> MaterialTheme.colorScheme.surfaceContainerLow
+                        chapter.id == lastReadChapterId -> MaterialTheme.colorScheme.primaryContainer
+                        chapter.id in readChapterIds -> MaterialTheme.colorScheme.secondaryContainer
+                        else -> MaterialTheme.colorScheme.surfaceContainer
                     }
                     Surface(
                         modifier = Modifier
@@ -685,6 +711,11 @@ private fun LocalCachedChapterDirectoryCard(
                                     text = "未完成",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            } else if (chapter.id in readChapterIds) {
+                                Text(
+                                    if (chapter.id == lastReadChapterId) "继续" else "已读",
+                                    style = MaterialTheme.typography.labelSmall,
                                 )
                             }
                         }
@@ -837,6 +868,11 @@ private fun LocalCover(
     modifier: Modifier = Modifier.fillMaxWidth(),
 ) {
     val context = LocalContext.current
+    var loadedDrawable by remember(coverPath) { mutableStateOf<Drawable?>(null) }
+    val coverModifier = modifier
+        .aspectRatio(0.75f)
+        .clip(MaterialTheme.shapes.medium)
+        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
     val localCoverModel: Any? = when {
         coverPath.isNotBlank() && cachePathExists(context, coverPath) &&
             cachePathHasContent(context, coverPath) -> {
@@ -847,15 +883,16 @@ private fun LocalCover(
 
     if (localCoverModel != null) {
         AsyncImage(
-            model = localCoverModel,
+            model = ImageRequest.Builder(context).data(localCoverModel).allowHardware(false).build(),
             imageLoader = imageLoader,
             contentDescription = "${title}的封面",
             contentScale = ContentScale.Crop,
-            modifier = modifier.aspectRatio(0.75f),
+            onSuccess = { loadedDrawable = it.result.drawable },
+            modifier = coverModifier.copyComicCover(title) { loadedDrawable?.toBitmap() },
         )
     } else {
         Box(
-            modifier = modifier.aspectRatio(0.75f),
+            modifier = coverModifier,
         )
     }
 }

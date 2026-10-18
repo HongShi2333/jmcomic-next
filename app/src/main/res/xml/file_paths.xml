@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <cache-path name="clipboard_images" path="clipboard-images/" />
     <!-- 下载的 APK 保存在 cacheDir/common/updates/ 下 -->
     <cache-path name="common_updates" path="common/updates/" />
     <cache-path name="updates" path="updates/" />

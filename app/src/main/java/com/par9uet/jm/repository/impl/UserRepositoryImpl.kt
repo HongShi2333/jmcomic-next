@@ -138,12 +138,13 @@ class UserRepositoryImpl(
                 try {
                     currentCoroutineContext().ensureActive()
                     val client = embeddedClientManager.getClient()
-                    embeddedClientManager.setFavoriteOrder(order.value)
                     val query = FavoriteQuery.Builder()
                         .folderId(folderId)
                         .page(page)
                         .build()
-                    val favPage = client.getFavorites(query)
+                    val favPage = embeddedClientManager.withFavoriteOrder(order.value) {
+                        client.getFavorites(query)
+                    }
                     val metas = favPage.content().orEmpty()
                     // 首次列表请求只使用收藏接口元数据，保证列表和封面可以先展示。
                     // 预加载流程在封面完成后会再次以 enrichTags=true 补齐详情标签。
@@ -223,7 +224,9 @@ class UserRepositoryImpl(
                             val albumMetas = client.getWatchHistory(page)
                             UserHistoryComicListResponse(
                                 list = albumMetas.map { it.toHistoryListItem() },
-                                total = albumMetas.size
+                                // This library discards watch_list.total. A page's
+                                // item count is not the history's total count.
+                                total = -1
                             )
                         })
                     } catch (e: CancellationException) {

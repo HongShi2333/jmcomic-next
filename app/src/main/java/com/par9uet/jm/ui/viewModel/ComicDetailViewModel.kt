@@ -9,6 +9,7 @@ import com.par9uet.jm.data.models.COMIC_API_SOURCE_BUILTIN
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.database.dao.DownloadComicDao
 import com.par9uet.jm.repository.ComicRepository
+import com.par9uet.jm.repository.ComicTagFilter
 import com.par9uet.jm.repository.UserRepository
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
@@ -35,6 +36,7 @@ class ComicDetailViewModel(
     private val remoteSettingManager: RemoteSettingManager,
     private val userRepository: UserRepository,
     private val localSettingManager: LocalSettingManager,
+    private val comicTagFilter: ComicTagFilter,
 ) : ViewModel() {
     private val _comicDetailState = MutableStateFlow<CommonUIState<Comic>>(
         CommonUIState(
@@ -63,6 +65,12 @@ class ComicDetailViewModel(
                 }
 
                 is NetWorkResult.Success<ComicDetailResponse> -> {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        comicTagFilter.cacheDetail(
+                            detail = data.data,
+                            source = tagCacheSource(),
+                        )
+                    }
                     _comicDetailState.update {
                         it.copy(
                             data = data.data.toComic()
@@ -76,6 +84,11 @@ class ComicDetailViewModel(
                 )
             }
         }
+    }
+
+    private fun tagCacheSource(): String {
+        val setting = localSettingManager.localSettingState.value
+        return "${setting.comicApiSource}|${setting.api}"
     }
 
     private val _likeComicState = MutableStateFlow(CommonUIState(data = null))

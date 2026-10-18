@@ -64,6 +64,7 @@ import org.koin.compose.viewmodel.koinActivityViewModel
 fun ComicSearchScreen(
     initialSearchContent: String = "",
     initialExcludedTags: List<String> = emptyList(),
+    initialMainTag: Int = 0,
     comicViewModel: ComicViewModel = koinActivityViewModel(),
     historySearchManager: HistorySearchManager = getKoin().get(),
     localSettingManager: LocalSettingManager = getKoin().get(),
@@ -107,7 +108,7 @@ fun ComicSearchScreen(
         val encodedSearchContent = Uri.encode(visibleSearchContent)
         val encodedExcludedTags = Uri.encode(serializeExcludedTags(finalExcludedTags))
         mainNavController.navigate(
-            "comicSearchResult/$encodedSearchContent?excludedTags=$encodedExcludedTags"
+            "comicSearchResult/$encodedSearchContent?excludedTags=$encodedExcludedTags&mainTag=$initialMainTag"
         )
     }
 

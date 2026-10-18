@@ -66,10 +66,12 @@ fun HomeCategorySortDialog(
 
     fun move(from: Int, to: Int) {
         val current = orderHomeCategories(categories, draftOrder)
-        if (from !in current.indices || to !in current.indices) return
+        if (from !in current.indices || to !in current.indices || from == to) return
         val firstIndex = listState.firstVisibleItemIndex
         val firstOffset = listState.firstVisibleItemScrollOffset
-        draftOrder = current.toMutableList().apply { add(to, removeAt(from)) }.map { it.id }
+        draftOrder = current.toMutableList().apply {
+            add(to, removeAt(from))
+        }.map { it.id }
         if (firstIndex in minOf(from, to)..maxOf(from, to)) {
             listState.requestScrollToItem(firstIndex, firstOffset)
         }
@@ -80,19 +82,21 @@ fun HomeCategorySortDialog(
         val layout = listState.layoutInfo
         val current = orderHomeCategories(categories, draftOrder)
         val from = current.indexOfFirst { it.id == id }
+        if (from < 0) return
         val center = (draggedTop + draggedHeight / 2f).coerceIn(
-            layout.viewportStartOffset.toFloat(), layout.viewportEndOffset.toFloat(),
+            layout.viewportStartOffset.toFloat(),
+            layout.viewportEndOffset.toFloat(),
         )
-        val target = layout.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2f - center) } ?: return
-        // 按目标位置重排，兼容布局尚未更新的帧。
-        if (from != target.index) {
-            move(from, target.index)
-        }
+        val target = layout.visibleItemsInfo.minByOrNull {
+            abs(it.offset + it.size / 2f - center)
+        } ?: return
+        move(from, target.index)
     }
 
     val currentReorder by rememberUpdatedState(::reorderDraggedItem)
     val edgeSize = with(LocalDensity.current) { 48.dp.toPx() }
     val scrollSpeed = with(LocalDensity.current) { 480.dp.toPx() }
+
     LaunchedEffect(draggedId) {
         if (draggedId == null) return@LaunchedEffect
         var lastFrame = withFrameNanos { it }
@@ -102,7 +106,10 @@ fun HomeCategorySortDialog(
             lastFrame = frame
             val layout = listState.layoutInfo
             val center = draggedTop + draggedHeight / 2f
-            val edge = minOf(edgeSize, (layout.viewportEndOffset - layout.viewportStartOffset) / 3f).coerceAtLeast(1f)
+            val edge = minOf(
+                edgeSize,
+                (layout.viewportEndOffset - layout.viewportStartOffset) / 3f,
+            ).coerceAtLeast(1f)
             val direction = when {
                 center < layout.viewportStartOffset + edge ->
                     ((center - layout.viewportStartOffset - edge) / edge).coerceAtLeast(-1f)
@@ -110,7 +117,9 @@ fun HomeCategorySortDialog(
                     ((center - layout.viewportEndOffset + edge) / edge).coerceAtMost(1f)
                 else -> 0f
             }
-            if (direction != 0f) listState.scrollBy(direction * scrollSpeed * elapsed)
+            if (direction != 0f) {
+                listState.scrollBy(direction * scrollSpeed * elapsed)
+            }
             currentReorder()
         }
     }
@@ -123,7 +132,9 @@ fun HomeCategorySortDialog(
                 Text("长按右侧三横条拖动排序，保存后记住排列。")
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.heightIn(max = 420.dp).weight(1f, fill = false),
+                    modifier = Modifier
+                        .heightIn(max = 420.dp)
+                        .weight(1f, fill = false),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(ordered, key = { it.id }) { category ->
@@ -136,13 +147,17 @@ fun HomeCategorySortDialog(
                                 .graphicsLayer {
                                     translationY = if (dragging) {
                                         val top = listState.layoutInfo.visibleItemsInfo
-                                            .firstOrNull { it.key == category.id }?.offset ?: 0
+                                            .firstOrNull { it.key == category.id }
+                                            ?.offset ?: 0
                                         draggedTop - top
                                     } else 0f
                                 },
                             shape = MaterialTheme.shapes.medium,
-                            color = if (dragging) MaterialTheme.colorScheme.primaryContainer
-                                else MaterialTheme.colorScheme.surfaceContainerLow,
+                            color = if (dragging) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceContainerLow
+                            },
                             shadowElevation = if (dragging) 8.dp else 0.dp,
                         ) {
                             Row(
@@ -157,35 +172,44 @@ fun HomeCategorySortDialog(
                                     overflow = TextOverflow.Ellipsis,
                                 )
                                 Box(
-                                    modifier = Modifier.size(48.dp).pointerInput(category.id) {
-                                        detectDragGesturesAfterLongPress(
-                                            onDragStart = {
-                                                listState.layoutInfo.visibleItemsInfo
-                                                    .firstOrNull { it.key == category.id }?.let { item ->
-                                                        draggedTop = item.offset.toFloat()
-                                                        draggedHeight = item.size
-                                                        draggedId = category.id
-                                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    }
-                                            },
-                                            onDrag = { change, amount ->
-                                                change.consume()
-                                                draggedTop += amount.y
-                                                currentReorder()
-                                            },
-                                            onDragEnd = {
-                                                currentReorder()
-                                                draggedId = null
-                                            },
-                                            onDragCancel = { draggedId = null },
-                                        )
-                                    },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .pointerInput(category.id) {
+                                            detectDragGesturesAfterLongPress(
+                                                onDragStart = {
+                                                    listState.layoutInfo.visibleItemsInfo
+                                                        .firstOrNull { it.key == category.id }
+                                                        ?.let { item ->
+                                                            draggedTop = item.offset.toFloat()
+                                                            draggedHeight = item.size
+                                                            draggedId = category.id
+                                                            hapticFeedback.performHapticFeedback(
+                                                                HapticFeedbackType.LongPress,
+                                                            )
+                                                        }
+                                                },
+                                                onDrag = { change, amount ->
+                                                    change.consume()
+                                                    draggedTop += amount.y
+                                                    currentReorder()
+                                                },
+                                                onDragEnd = {
+                                                    currentReorder()
+                                                    draggedId = null
+                                                },
+                                                onDragCancel = { draggedId = null },
+                                            )
+                                        },
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
                                         Icons.Default.Menu,
                                         contentDescription = "长按拖动${title}排序",
-                                        modifier = Modifier.size(with(LocalDensity.current) { LocalTextStyle.current.fontSize.toDp() }),
+                                        modifier = Modifier.size(
+                                            with(LocalDensity.current) {
+                                                LocalTextStyle.current.fontSize.toDp()
+                                            },
+                                        ),
                                     )
                                 }
                             }
@@ -194,7 +218,9 @@ fun HomeCategorySortDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(draftOrder) }) { Text("保存") } },
+        confirmButton = {
+            TextButton(onClick = { onSave(draftOrder) }) { Text("保存") }
+        },
         dismissButton = {
             Row {
                 TextButton(onClick = { draftOrder = emptyList() }) { Text("恢复默认") }

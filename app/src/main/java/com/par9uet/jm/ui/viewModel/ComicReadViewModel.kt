@@ -248,7 +248,7 @@ class ComicReadViewModel(
             } else {
                 0
             }
-            readHistoryComicId.intValue = readHistoryManager.markRead(groupId, comicId)
+            readHistoryComicId.intValue = groupId
             loadLocalChapterList(comicId, downloadComic)
             val storedPath = downloadComic?.zipPath.orEmpty()
             if (getDownloadTreeUri(context) == null && downloadComic != null) {
@@ -296,6 +296,7 @@ class ComicReadViewModel(
                 return@launch
             }
 
+            readHistoryManager.markRead(groupId, comicId)
             _comicPicState.update {
                 it.copy(
                     data = files.mapIndexed { index, path ->

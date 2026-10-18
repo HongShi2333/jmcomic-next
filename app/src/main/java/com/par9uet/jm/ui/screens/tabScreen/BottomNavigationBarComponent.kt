@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.par9uet.jm.R
 import com.par9uet.jm.store.LocalSettingManager
 import org.koin.compose.getKoin
@@ -33,7 +34,11 @@ fun BottomNavigationBarComponent(
 
     fun navigate(name: String) {
         if (name == currentRoute) return
-        tabNavController.navigate(name)
+        tabNavController.navigate(name) {
+            popUpTo(tabNavController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
     }
 
     val itemColors = NavigationBarItemDefaults.colors(
@@ -108,7 +113,11 @@ fun NavigationRailComponent(
 
     fun navigate(name: String) {
         if (name == currentRoute) return
-        tabNavController.navigate(name)
+        tabNavController.navigate(name) {
+            popUpTo(tabNavController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
     }
 
     val itemColors = NavigationRailItemDefaults.colors(

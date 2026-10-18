@@ -6,6 +6,7 @@ data class RemoteSettingResponse(
 //    val logo_path: String,
 //    val main_web_host: String,
     val img_host: String,
+    val main_web_host: String? = null,
 //    val base_url: String,
 //    val is_cn: Int,
 //    val cn_base_url: String,
@@ -30,6 +31,7 @@ data class RemoteSettingResponse(
     class Shunt(val title: String, val key: String)
 
     fun toRemoteSetting(): RemoteSetting = RemoteSetting(
-        imgHost = img_host
+        imgHost = img_host,
+        webHost = main_web_host?.takeIf { it.isNotBlank() } ?: "18comic.vip",
     )
 }

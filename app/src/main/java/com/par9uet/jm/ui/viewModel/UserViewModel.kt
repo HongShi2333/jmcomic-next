@@ -7,9 +7,7 @@ import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.cachedIn
 import coil.ImageLoader
-import coil.request.ImageRequest
-import com.par9uet.jm.cache.applyComicCoverCache
-import com.par9uet.jm.cache.comicCoverCacheKey
+import com.par9uet.jm.cache.preloadComicCovers
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_NETWORK
 import com.par9uet.jm.data.models.CollectComicOrderFilter
 import com.par9uet.jm.data.models.Comic
@@ -17,6 +15,7 @@ import com.par9uet.jm.data.models.SignInData
 import com.par9uet.jm.data.models.TagFilterLogic
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.repository.UserRepository
+import com.par9uet.jm.repository.FavoriteWarmupSession
 import com.par9uet.jm.retrofit.model.LoginResponse
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.retrofit.model.SignInDataResponse
@@ -27,6 +26,7 @@ import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.models.CommonUIState
+import com.par9uet.jm.ui.pagingSource.ComicPageController
 import com.par9uet.jm.ui.pagingSource.CollectComicPagingSource
 import com.par9uet.jm.ui.pagingSource.HistoryComicPagingSource
 import com.par9uet.jm.ui.pagingSource.HistoryCommentPagingSource
@@ -39,10 +39,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -71,6 +78,8 @@ private data class CollectPagerKey(
     val filter: CollectComicLocalFilter,
     val folderId: Int,
     val preloadVersion: Int,
+    val apiSource: String,
+    val userId: Int = 0,
 )
 
 class UserViewModel(
@@ -119,6 +128,9 @@ class UserViewModel(
     }
 
     fun logout() {
+        favoriteWarmup?.close()
+        favoriteWarmup = null
+        favoriteWarmupKey = null
         favoritePreloadJob?.cancel()
         favoritePreloadJob = null
         favoritePreloadCompleted = false
@@ -149,121 +161,119 @@ class UserViewModel(
     val collectEditState = _collectEditState.asStateFlow()
     private var collectTagCountJob: Job? = null
     private var collectTagCountKey = ""
+    private var collectFilterStatsRequested = false
     private var favoritePreloadJob: Job? = null
     private var favoritePreloadCompleted = false
     private val _preloadedFavoritePage = MutableStateFlow<UserCollectComicListResponse?>(null)
     private val _favoritePreloadVersion = MutableStateFlow(0)
+    private var favoriteWarmup: FavoriteWarmupSession? = null
+    private var favoriteWarmupKey: Pair<Int, String>? = null
+    private val favoriteForeground = MutableStateFlow(false)
+
+    private fun favoriteSession(userId: Int, source: String): FavoriteWarmupSession {
+        val key = userId to source
+        if (favoriteWarmupKey != key || favoriteWarmup == null) {
+            favoritePreloadJob?.cancel()
+            favoriteWarmup?.close()
+            favoritePreloadCompleted = false
+            _preloadedFavoritePage.value = null
+            favoriteForeground.value = false
+            favoriteWarmupKey = key
+            favoriteWarmup = FavoriteWarmupSession(viewModelScope) { page ->
+                userRepository.getCollectComicList(page, CollectComicOrderFilter.COLLECT_TIME, 0)
+            }
+        }
+        return checkNotNull(favoriteWarmup)
+    }
+
+    val collectPagination = ComicPageController()
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val collectComicPager = combine(
-        _collectComicOrder,
-        localSettingManager.localSettingState,
-        _collectComicFilter,
-        _selectedFolderId,
-        _favoritePreloadVersion,
-    ) { order, localSetting, filter, folderId, preloadVersion ->
-        CollectPagerKey(order, localSetting.blockedTagList, filter, folderId, preloadVersion)
-    }.flatMapLatest { key ->
-        Pager(
-            // 收藏接口按 20 条分页，PagingSource 会把连续三页合并为一次加载，
-            // 让首屏和滚动加载不再被 20 条一断卡住。
-            config = PagingConfig(pageSize = 60, prefetchDistance = 12, initialLoadSize = 60),
-            pagingSourceFactory = {
-                CollectComicPagingSource(
-                    userRepository,
-                    key.order,
-                    key.blockedTagList,
-                    key.filter.searchText,
-                    key.filter.selectedTags,
-                    key.filter.selectedRoles,
-                    key.filter.selectedAuthors,
-                    key.filter.selectedTypes,
-                    key.folderId,
-                    key.filter.tagLogic,
-                    _preloadedFavoritePage.value.takeIf {
-                        key.order == CollectComicOrderFilter.COLLECT_TIME &&
-                            key.folderId == 0 &&
-                            key.filter.searchText.isBlank() &&
-                            key.filter.selectedTags.isEmpty() &&
-                            key.filter.selectedRoles.isEmpty() &&
-                            key.filter.selectedAuthors.isEmpty() &&
-                            key.filter.selectedTypes.isEmpty()
-                    }
-                )
-            }
-        ).flow
+    val collectComicPager = collectPagination.pagingFlow(
+        filters = combine(
+            _collectComicOrder,
+            localSettingManager.localSettingState,
+            _collectComicFilter,
+            _selectedFolderId,
+            _favoritePreloadVersion,
+        ) { order, localSetting, filter, folderId, preloadVersion ->
+            CollectPagerKey(order, localSetting.blockedTagList, filter, folderId, preloadVersion, localSetting.comicApiSource)
+        }.combine(userManager.userState.map { it.data?.id ?: 0 }.distinctUntilChanged()) { key, id ->
+            key.copy(userId = id)
+        },
+    ) { key ->
+        CollectComicPagingSource(
+            userRepository,
+            key.order,
+            key.blockedTagList,
+            key.filter.searchText,
+            key.filter.selectedTags,
+            key.filter.selectedRoles,
+            key.filter.selectedAuthors,
+            key.filter.selectedTypes,
+            key.folderId,
+            key.filter.tagLogic,
+            _preloadedFavoritePage.value.takeIf {
+                key.order == CollectComicOrderFilter.COLLECT_TIME &&
+                    key.folderId == 0 &&
+                    key.filter.searchText.isBlank() &&
+                    key.filter.selectedTags.isEmpty() &&
+                    key.filter.selectedRoles.isEmpty() &&
+                    key.filter.selectedAuthors.isEmpty() &&
+                    key.filter.selectedTypes.isEmpty()
+            },
+            warmPage = if (key.userId > 0 && key.order == CollectComicOrderFilter.COLLECT_TIME && key.folderId == 0) {
+                favoriteSession(key.userId, key.apiSource)::page
+            } else null,
+        )
     }.cachedIn(viewModelScope)
 
     /**
-     * 首页首屏完成后预热收藏页：先缓存列表，再并行预取封面，最后补齐详情标签。
-     * 预热结果会让收藏页首屏直接复用列表数据，标签补齐后通过版本号触发一次刷新。
+     * 与首页并行准备收藏首个展示页。后台与前台共享请求；封面及标签分阶段加载。
      */
-    fun preloadFavoritesAfterHome(context: Context, imageLoader: ImageLoader) {
-        if ((userManager.userState.value.data?.id ?: 0) <= 0 || favoritePreloadCompleted || favoritePreloadJob?.isActive == true) return
+    fun preloadFavorites(
+        context: Context,
+        imageLoader: ImageLoader,
+        homeReady: Flow<Boolean> = flowOf(true),
+        foreground: Boolean = false,
+    ) {
+        val userId = userManager.userState.value.data?.id ?: 0
+        if (userId <= 0) return
+        val session = favoriteSession(userId, localSettingManager.localSettingState.value.comicApiSource)
+        if (foreground) favoriteForeground.value = true
+        if (favoritePreloadCompleted || favoritePreloadJob?.isActive == true) return
+        val appContext = context.applicationContext
         favoritePreloadJob = viewModelScope.launch(Dispatchers.IO) {
-            val order = CollectComicOrderFilter.COLLECT_TIME
-            val folderId = 0
-            when (val firstPage = userRepository.getCollectComicList(1, order, folderId)) {
-                is NetWorkResult.Error -> {
-                    favoritePreloadCompleted = false
-                    logError("UserViewModel", "预加载收藏列表失败：${firstPage.message}")
-                }
-                is NetWorkResult.Success -> {
-                    _folderList.value = firstPage.data.folder_list ?: emptyMap()
-                    _preloadedFavoritePage.value = firstPage.data
-                    _favoritePreloadVersion.update { it + 1 }
-
-                    // 列表到达后先并行预取封面，避免进入收藏页时图片请求与列表请求竞争。
-                    val coverCacheDuration = localSettingManager.localSettingState.value.coverCacheDurationHours
-                    if (coverCacheDuration > 0) coroutineScope {
-                        firstPage.data.list
-                            .mapNotNull { item ->
-                                val comicId = item.id.trim().toIntOrNull()
-                                val imageUrl = item.image.trim()
-                                if (comicId != null && imageUrl.isNotBlank()) {
-                                    comicId to imageUrl
-                                } else {
-                                    null
-                                }
-                            }
-                            .distinctBy { (comicId, _) -> comicId }
-                            .map { (comicId, imageUrl) ->
-                                async {
-                                    runCatching {
-                                        imageLoader.execute(
-                                            ImageRequest.Builder(context)
-                                                .data(imageUrl)
-                                                .applyComicCoverCache(
-                                                    comicCoverCacheKey(comicId, coverCacheDuration)
-                                                )
-                                                .build()
-                                        )
-                                    }
-                                }
-                            }
-                            .awaitAll()
-                    }
-
-                    // 内置/混合 API 的详情标签放到封面预取之后，避免拖慢收藏列表首屏。
-                    if (localSettingManager.localSettingState.value.comicApiSource != COMIC_API_SOURCE_NETWORK) {
-                        when (val taggedPage = userRepository.getCollectComicList(1, order, folderId, enrichTags = true)) {
-                            is NetWorkResult.Success -> {
-                                _preloadedFavoritePage.value = taggedPage.data
-                                _favoritePreloadVersion.update { it + 1 }
-                                favoritePreloadCompleted = true
-                                // 若筛选弹窗已先打开过，重新统计会用到这批详情标签。
-                                invalidateCollectFilterStats()
-                                refreshCollectTagCounts()
-                            }
-                            is NetWorkResult.Error -> {
-                                favoritePreloadCompleted = false
-                                logError("UserViewModel", "预加载收藏标签失败：${taggedPage.message}")
-                            }
+            try {
+                val pages = session.firstDisplayPage()
+                currentCoroutineContext().ensureActive()
+                val firstPage = pages.firstOrNull() ?: return@launch
+                _folderList.value = firstPage.folder_list ?: emptyMap()
+                _preloadedFavoritePage.value = firstPage
+                // Publishing the warm cache must not restart an already visible favorites page.
+                favoritePreloadCompleted = true
+                val coverComics = pages.flatMap { it.list }.mapNotNull { item ->
+                        item.id.trim().toIntOrNull()?.takeIf { it > 0 }?.let { id ->
+                            Comic.create(id, item.name, emptyList(), item.image)
                         }
-                    } else {
-                        favoritePreloadCompleted = true
+                }
+                preloadComicCovers(appContext, imageLoader, coverComics, localSettingManager.localSettingState.value.coverCacheDurationHours)
+                combine(homeReady, favoriteForeground) { ready, priority -> ready || priority }.first { it }
+                if (localSettingManager.localSettingState.value.comicApiSource != COMIC_API_SOURCE_NETWORK) {
+                    when (val taggedPage = userRepository.getCollectComicList(1, CollectComicOrderFilter.COLLECT_TIME, 0, enrichTags = true)) {
+                        is NetWorkResult.Success -> {
+                            currentCoroutineContext().ensureActive()
+                            _preloadedFavoritePage.value = taggedPage.data
+                            invalidateCollectFilterStats()
+                            if (collectFilterStatsRequested) refreshCollectTagCounts()
+                        }
+                        is NetWorkResult.Error -> logError("UserViewModel", "预加载收藏标签失败：${taggedPage.message}")
                     }
                 }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                logError("UserViewModel", "收藏预热失败：${error.message}")
             }
         }
     }
@@ -386,6 +396,9 @@ class UserViewModel(
 
     /** Clears the startup preload so a user initiated refresh always hits fresh collection data. */
     fun refreshCollectContent() {
+        favoriteWarmup?.close()
+        favoriteWarmup = null
+        favoriteWarmupKey = null
         favoritePreloadJob?.cancel()
         favoritePreloadJob = null
         favoritePreloadCompleted = false
@@ -433,6 +446,7 @@ class UserViewModel(
     }
 
     fun refreshCollectTagCounts() {
+        collectFilterStatsRequested = true
         collectTagCountJob?.cancel()
         val blockedTagList = localSettingManager.localSettingState.value.blockedTagList
         val order = _collectComicOrder.value
@@ -544,26 +558,20 @@ class UserViewModel(
     }
 
     private val _historyRefreshVersion = MutableStateFlow(0)
+    val historyPagination = ComicPageController()
 
     fun refreshHistoryComics() {
         _historyRefreshVersion.update { it + 1 }
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    val historyComicPager = combine(
-        localSettingManager.localSettingState,
-        _historyRefreshVersion
-    ) { localSetting, _ -> localSetting }
-        .flatMapLatest { localSetting ->
-        Pager(
-            config = PagingConfig(pageSize = 20, prefetchDistance = 6, initialLoadSize = 20),
-            pagingSourceFactory = {
-                HistoryComicPagingSource(
-                    userRepository,
-                    localSetting.blockedTagList
-                )
-            }
-        ).flow
+    val historyComicPager = historyPagination.pagingFlow(
+        filters = combine(
+            localSettingManager.localSettingState,
+            _historyRefreshVersion,
+        ) { localSetting, refresh -> Triple(localSetting.blockedTagList, localSetting.comicApiSource, refresh) },
+    ) { (blockedTags, _, _) ->
+        HistoryComicPagingSource(userRepository, blockedTags)
     }.cachedIn(viewModelScope)
 
     private val _historyEditState = MutableStateFlow(HistoryEditState())

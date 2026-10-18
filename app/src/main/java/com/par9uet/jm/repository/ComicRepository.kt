@@ -1,8 +1,8 @@
 package com.par9uet.jm.repository
 
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
-import com.par9uet.jm.data.models.HomeCategoryPageSource
-import com.par9uet.jm.data.models.HomeComicPage
+import com.par9uet.jm.data.models.ComicRankCategory
+import com.par9uet.jm.data.models.ComicRankPeriod
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
 import com.par9uet.jm.retrofit.model.ComicListResponse
@@ -21,13 +21,35 @@ interface ComicRepository {
     suspend fun collectComic(id: Int): NetWorkResult<CollectComicResponse>
     suspend fun unCollectComic(id: Int): NetWorkResult<CollectComicResponse>
     suspend fun getHomeSwiperComicList(): NetWorkResult<List<HomeSwiperComicListItemResponse>>
-    suspend fun getHomeCategoryPage(source: HomeCategoryPageSource, page: Int): NetWorkResult<HomeComicPage>
+    suspend fun getHomeSwiperComicList(
+        onFirstContent: (List<HomeSwiperComicListItemResponse>) -> Unit,
+    ): NetWorkResult<List<HomeSwiperComicListItemResponse>> = getHomeSwiperComicList()
     suspend fun getComicPicList(id: Int, shunt: String): NetWorkResult<ComicPicListResponse>
     suspend fun downloadImageBytes(comicId: Int, imageIndex: Int): ByteArray?
     suspend fun getComicList(
         page: Int,
         order: ComicSearchOrderFilter,
         searchContent: String,
+    ): NetWorkResult<ComicListResponse>
+
+    suspend fun getComicListWithMainTag(
+        page: Int,
+        order: ComicSearchOrderFilter,
+        searchContent: String,
+        mainTag: Int,
+    ): NetWorkResult<ComicListResponse> =
+        getComicList(page, order, searchContent)
+
+    suspend fun getComicTagRankList(
+        page: Int,
+        tagName: String,
+        period: ComicRankPeriod,
+    ): NetWorkResult<ComicListResponse>
+
+    suspend fun getComicCategoryRankList(
+        page: Int,
+        category: ComicRankCategory,
+        period: ComicRankPeriod,
     ): NetWorkResult<ComicListResponse>
 
     suspend fun getWeekData(): NetWorkResult<WeekResponse>

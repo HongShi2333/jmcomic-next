@@ -3,8 +3,8 @@ package com.par9uet.jm.ui.pagingSource
 import androidx.paging.PagingSource
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
-import com.par9uet.jm.data.models.HomeCategoryPageSource
-import com.par9uet.jm.data.models.HomeComicPage
+import com.par9uet.jm.data.models.ComicRankCategory
+import com.par9uet.jm.data.models.ComicRankPeriod
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
@@ -23,6 +23,24 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SearchComicPagingSourceTest {
+    @Test
+    fun timedWebsiteAndCategoryRequestsUseTheirActualPageSizes() {
+        val repository = FakeComicRepository()
+        assertEquals(12, SearchComicPagingSource(repository, SearchComicFilter(
+            searchContent = "custom", order = ComicSearchOrderFilter.WEEK_RANK, mainTag = 3,
+        )).remotePageSize)
+        assertEquals(80, SearchComicPagingSource(repository, SearchComicFilter(
+            searchContent = "同人", order = ComicSearchOrderFilter.WEEK_RANK, mainTag = 3,
+        )).remotePageSize)
+        assertEquals(12, SearchComicPagingSource(repository, SearchComicFilter(
+            searchContent = "同人", excludedTags = listOf("excluded"),
+            order = ComicSearchOrderFilter.WEEK_RANK, mainTag = 3,
+        )).remotePageSize)
+        assertEquals(80, SearchComicPagingSource(repository, SearchComicFilter(
+            searchContent = "custom", order = ComicSearchOrderFilter.NEWEST, mainTag = 3,
+        )).remotePageSize)
+    }
+
     @Test
     fun filtersMultipleExcludedTagsByDetail() = runBlocking {
         val repository = FakeComicRepository()
@@ -48,11 +66,6 @@ class SearchComicPagingSourceTest {
     }
 
     private class FakeComicRepository : ComicRepository {
-        override suspend fun getHomeCategoryPage(
-            source: HomeCategoryPageSource,
-            page: Int,
-        ): NetWorkResult<HomeComicPage> = unused()
-
         var lastSearchContent: String? = null
 
         override suspend fun getComicList(
@@ -82,6 +95,18 @@ class SearchComicPagingSourceTest {
                 )
             )
         }
+
+        override suspend fun getComicTagRankList(
+            page: Int,
+            tagName: String,
+            period: ComicRankPeriod,
+        ): NetWorkResult<ComicListResponse> = unused()
+
+        override suspend fun getComicCategoryRankList(
+            page: Int,
+            category: ComicRankCategory,
+            period: ComicRankPeriod,
+        ): NetWorkResult<ComicListResponse> = unused()
 
         override suspend fun getComicIdsByTag(tagName: String, maxPages: Int): Set<Int> {
             error("getComicIdsByTag should not be used for search exclusions")

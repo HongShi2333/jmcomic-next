@@ -25,6 +25,8 @@ class LocalSettingManager(
     @Volatile private var initialized = false
     private val _localSettingState = MutableStateFlow(LocalSetting())
     val localSettingState = _localSettingState.asStateFlow()
+    private val _initializedState = MutableStateFlow(false)
+    val initializedState = _initializedState.asStateFlow()
 
     fun updateComicApiSource(comicApiSource: String) =
         updateSetting { it.copy(comicApiSource = comicApiSource) }
@@ -102,6 +104,19 @@ class LocalSettingManager(
 
     fun updateVolumeKeyPageTurningEnabled(enabled: Boolean) =
         updateSetting { it.copy(volumeKeyPageTurningEnabled = enabled) }
+
+    fun updateReaderBrightnessEnabled(enabled: Boolean) =
+        updateSetting { it.copy(readerBrightnessEnabled = enabled) }
+
+    fun updateReaderLongPressSaveEnabled(enabled: Boolean) =
+        updateSetting { it.copy(readerLongPressSaveEnabled = enabled) }
+
+    fun updateReaderBrightness(light: Int, dark: Int) = updateSetting {
+        it.copy(
+            readerLightBrightnessPercent = light.coerceIn(1, 100),
+            readerDarkBrightnessPercent = dark.coerceIn(1, 100),
+        )
+    }
 
     fun updateCoverCacheDurationHours(hours: Int) =
         updateSetting { it.copy(coverCacheDurationHours = hours.coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS)) }
@@ -188,14 +203,6 @@ class LocalSettingManager(
             setting.withBlockedTagTemplates(mutable)
         }
     }
-
-    fun addTagToBlockedTagTemplate(index: Int, tag: String) =
-        updateSetting { setting ->
-            val templates = setting.blockedTagTemplateList.toMutableList()
-            val template = templates.getOrNull(index) ?: return@updateSetting setting
-            templates[index] = template.copy(tagList = normalizeBlockedTagList(template.tagList + tag))
-            setting.withBlockedTagTemplates(templates)
-        }
 
     fun removeBlockedTagTemplate(index: Int) =
         updateSetting { setting ->
@@ -329,11 +336,13 @@ class LocalSettingManager(
     fun dismissNsfwWarning() =
         updateSetting { it.copy(nsfwWarningDismissed = true) }
 
-    fun updateHomeCategoryOrder(ids: List<String>) =
-        updateSetting { it.copy(homeCategoryOrder = ids.filter(String::isNotBlank).distinct()) }
-
     fun updateHomeGridColumns(columns: Int) =
         updateSetting { it.copy(homeGridColumns = columns.coerceIn(0, 6)) }
+
+    fun updateHomeCategoryOrder(ids: List<String>) =
+        updateSetting {
+            it.copy(homeCategoryOrder = ids.filter(String::isNotBlank).distinct())
+        }
 
     fun updateCollectGridColumns(columns: Int) =
         updateSetting { it.copy(collectGridColumns = columns.coerceIn(0, 6)) }
@@ -418,13 +427,17 @@ class LocalSettingManager(
     )
 
     override suspend fun init() {
-        if (initialized) return
+        if (initialized) {
+            _initializedState.value = true
+            return
+        }
         log("local app settings init start")
         _localSettingState.update {
             localSettingStorage.get()
         }
         launcherDisguiseApplier.apply(LauncherDisguise.fromId(_localSettingState.value.launcherDisguise))
         initialized = true
+        _initializedState.value = true
         log("local app settings init finished")
     }
 

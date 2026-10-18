@@ -47,17 +47,35 @@ data class ComicTagFilterProgress(
     val checkedCount: Int,
 )
 
-/** 列表标签不完整，需通过详情确认。 */
+/**
+ * Completes incomplete list metadata from the detail endpoint before applying
+ * exclusion rules. Successful detail responses are persisted for later pages.
+ */
 class ComicTagFilter(
     private val fetchDetail: suspend (Int) -> NetWorkResult<ComicDetailResponse>,
     private val storage: ComicTagCache? = null,
 ) {
-    private val semaphore = Semaphore(6)
+    private val semaphore = Semaphore(4)
     private val cacheMutex = Mutex()
     private val cache = LinkedHashMap<String, CachedComicTags>()
     private var cacheLoaded = false
     private var cacheVersion = 0L
     private var persistedVersion = 0L
+
+    suspend fun cacheDetail(detail: ComicDetailResponse, source: String) {
+        ensureCacheLoaded()
+        val tags = CachedComicTags(
+            tagList = (detail.tags + detail.hidden_tags.orEmpty()).distinct(),
+            roleList = detail.actors.distinct(),
+            workList = detail.works.distinct(),
+            updatedAt = System.currentTimeMillis(),
+        )
+        cacheMutex.withLock {
+            cache[cacheKey(source, detail.id)] = tags
+            cacheVersion++
+        }
+        persistCache()
+    }
 
     suspend fun filter(
         candidates: List<Comic>,
@@ -68,23 +86,19 @@ class ComicTagFilter(
         if (excludedTags.all { it.isBlank() } || candidates.isEmpty()) {
             return@withContext ComicTagFilterResult(candidates)
         }
-        cacheMutex.withLock {
-            if (!cacheLoaded) {
-                cache.putAll(storage?.read().orEmpty().filterValues(::isFresh))
-                cacheLoaded = true
-            }
-        }
+        ensureCacheLoaded()
+
         val allowed = mutableMapOf<Int, Comic>()
         var unresolvedCount = 0
         var checkedCount = 0
         val uniqueCandidates = candidates.distinctBy { it.id }
         val cachedTags = cacheMutex.withLock {
             uniqueCandidates.associate { comic ->
-                comic.id to cache["$source:${comic.id}"]?.takeIf(::isFresh)
+                comic.id to cache[cacheKey(source, comic.id)]?.takeIf(::isFresh)
             }
         }
         val pending = mutableListOf<Comic>()
-        // 优先显示缓存结果。
+
         uniqueCandidates.forEach { comic ->
             val tags = cachedTags[comic.id]
             when {
@@ -98,7 +112,10 @@ class ComicTagFilter(
             }
         }
 
-        fun result() = ComicTagFilterResult(candidates.mapNotNull { allowed[it.id] }, unresolvedCount)
+        fun result() = ComicTagFilterResult(
+            comics = candidates.mapNotNull { allowed[it.id] },
+            unresolvedCount = unresolvedCount,
+        )
 
         suspend fun publish() {
             onProgress(ComicTagFilterProgress(result(), checkedCount))
@@ -107,8 +124,8 @@ class ComicTagFilter(
         try {
             publish()
             coroutineScope {
-                val tasks = Channel<Comic>(capacity = 6)
-                val results = Channel<Pair<Int, Resolution>>(capacity = 6)
+                val tasks = Channel<Comic>(capacity = 4)
+                val results = Channel<Pair<Int, Resolution>>(capacity = 4)
                 launch {
                     try {
                         pending.forEach { tasks.send(it) }
@@ -116,7 +133,7 @@ class ComicTagFilter(
                         tasks.close()
                     }
                 }
-                repeat(minOf(6, pending.size)) {
+                repeat(minOf(4, pending.size)) {
                     launch {
                         try {
                             for (comic in tasks) {
@@ -130,7 +147,6 @@ class ComicTagFilter(
                                 results.send(comic.id to resolution)
                             }
                         } catch (error: CancellationException) {
-                            // 子任务自行取消时一并终止收集，避免等待未返回的结果。
                             this@coroutineScope.cancel(error)
                             throw error
                         }
@@ -142,13 +158,21 @@ class ComicTagFilter(
                     resolution.comic?.let { allowed[id] = it }
                     checkedCount++
                     publish()
-                    if ((index + 1) % 6 == 0) persistCache()
+                    if ((index + 1) % 4 == 0) persistCache()
                 }
             }
             result()
         } finally {
-            // 切换分类时保存已完成的检查。
             withContext(NonCancellable) { persistCache() }
+        }
+    }
+
+    private suspend fun ensureCacheLoaded() {
+        cacheMutex.withLock {
+            if (!cacheLoaded) {
+                cache.putAll(storage?.read().orEmpty().filterValues(::isFresh))
+                cacheLoaded = true
+            }
         }
     }
 
@@ -167,7 +191,7 @@ class ComicTagFilter(
     }
 
     private suspend fun resolveTags(id: Int, source: String): CachedComicTags? = semaphore.withPermit {
-        val key = "$source:$id"
+        val key = cacheKey(source, id)
         cacheMutex.withLock { cache[key]?.takeIf(::isFresh) }?.let { return@withPermit it }
         val detail = try {
             fetchDetail(id)
@@ -181,9 +205,9 @@ class ComicTagFilter(
             return@withPermit null
         }
         val tags = CachedComicTags(
-            tagList = detail.data.tags + detail.data.hidden_tags.orEmpty(),
-            roleList = detail.data.actors,
-            workList = detail.data.works,
+            tagList = (detail.data.tags + detail.data.hidden_tags.orEmpty()).distinct(),
+            roleList = detail.data.actors.distinct(),
+            workList = detail.data.works.distinct(),
             updatedAt = System.currentTimeMillis(),
         )
         cacheMutex.withLock {
@@ -192,6 +216,9 @@ class ComicTagFilter(
         }
         tags
     }
+
+    private fun cacheKey(source: String, id: Int): String =
+        "${source.ifBlank { "default" }}:$id"
 
     private fun isFresh(entry: CachedComicTags): Boolean =
         System.currentTimeMillis() - entry.updatedAt in 0..(30L * 24 * 60 * 60 * 1000)

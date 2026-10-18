@@ -22,3 +22,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "jm-mobile-android6"
 include(":app", ":jm-mobile-clock")
+project(":jm-mobile-clock").projectDir = file("jm-mobile-clock")
+

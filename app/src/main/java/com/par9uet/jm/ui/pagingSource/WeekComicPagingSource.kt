@@ -1,12 +1,11 @@
 package com.par9uet.jm.ui.pagingSource
 
-import androidx.paging.PagingSource
-import androidx.paging.PagingState
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.repository.ComicTagFilter
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.retrofit.model.WeekRecommendComicResponse
+import com.par9uet.jm.utils.filterBlockedTags
 
 data class WeekFilter(
     val categoryId: String? = null,
@@ -17,9 +16,10 @@ class WeekComicPagingSource(
     private val comicRepository: ComicRepository,
     private val filter: WeekFilter,
     private val blockedTagList: List<String> = listOf(),
-    private val tagFilter: ComicTagFilter = ComicTagFilter(comicRepository::getComicDetail),
+    private val tagFilter: ComicTagFilter? = null,
     private val tagSource: String = "default",
-) : PagingSource<Int, Comic>() {
+) : ComicRemotePagingSource() {
+    override val hasLocalFilters: Boolean get() = blockedTagList.isNotEmpty()
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, Comic> {
         val currentPage = params.key ?: 1
         if (filter.categoryId == null || filter.typeId == null) {
@@ -39,21 +39,22 @@ class WeekComicPagingSource(
             }
 
             is NetWorkResult.Success<WeekRecommendComicResponse> -> {
-                val result = tagFilter.filter(data.data.toComicList(), blockedTagList, tagSource)
-                if (result.comics.isEmpty() && result.unresolvedCount > 0) {
-                    return LoadResult.Error(Exception("漫画标签检查失败，请重试"))
+                val candidates = data.data.toComicList().filterBlockedTags(blockedTagList)
+                val list = if (blockedTagList.size > 1 && candidates.isNotEmpty()) {
+                    (tagFilter ?: ComicTagFilter(comicRepository::getComicDetail))
+                        .filter(candidates, blockedTagList, tagSource)
+                        .comics
+                } else {
+                    candidates
                 }
-                val list = result.comics
-                val total = data.data.total
-                val isLastPage = currentPage >= (total + params.loadSize - 1) / params.loadSize
-                LoadResult.Page(
+                remotePage(
+                    page = currentPage,
                     data = list,
-                    prevKey = if (currentPage == 1) null else currentPage - 1,
-                    nextKey = if (isLastPage) null else currentPage + 1
+                    remoteCount = data.data.list.size,
+                    total = data.data.total.takeIf { it >= 0 },
                 )
             }
         }
     }
 
-    override fun getRefreshKey(state: PagingState<Int, Comic>): Int? = null
 }

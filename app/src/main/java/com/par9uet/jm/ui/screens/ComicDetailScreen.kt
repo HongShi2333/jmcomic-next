@@ -68,8 +68,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.CircleShape
@@ -87,9 +87,12 @@ import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ReadHistoryManager
 import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.store.UserManager
-import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.AddTagToTemplateDialog
+import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
 import com.par9uet.jm.ui.components.ComicCoverImage
+import com.par9uet.jm.ui.components.copyComicText
+import com.par9uet.jm.ui.components.CopyableComicAuthor
+import com.par9uet.jm.ui.components.comicTagSearchRoute
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.utils.shimmer
 import org.koin.compose.getKoin
@@ -212,6 +215,7 @@ private fun ComicHeaderInfo(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
             text = comic.name,
+            modifier = Modifier.copyComicText(comic.name),
             style = MaterialTheme.typography.headlineSmall,
             lineHeight = 1.25.em,
             fontWeight = FontWeight.Bold,
@@ -223,14 +227,7 @@ private fun ComicHeaderInfo(
             ) {
                 comic.authorList.distinct().forEach { author ->
                     key(author) {
-                        AssistChip(
-                            onClick = { onTagSearch(author) },
-                            label = { Text(author, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
-                        )
+                        CopyableComicAuthor(author, onClick = { onTagSearch(author) })
                     }
                 }
             }
@@ -288,7 +285,7 @@ private fun ComicDetailTag(
 ) {
     Surface(
         modifier = Modifier
-            .padding(vertical = 4.dp)
+            .padding(vertical = 2.dp)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -299,7 +296,7 @@ private fun ComicDetailTag(
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Text(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             text = label,
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
@@ -311,7 +308,8 @@ private fun ComicDetailTag(
 @Composable
 private fun ComicTagCollectionCard(
     comic: Comic,
-    onTagSearch: (String) -> Unit,
+    onTagRanking: (String) -> Unit,
+    onSearch: (String) -> Unit,
     onTagLongClick: (String) -> Unit,
 ) {
     if (comic.tagList.isEmpty() && comic.roleList.isEmpty() && comic.workList.isEmpty()) return
@@ -330,13 +328,13 @@ private fun ComicTagCollectionCard(
                 fontWeight = FontWeight.SemiBold,
             )
             ComicTagGroup("标签", comic.tagList) { tag ->
-                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onTagSearch(tag) }
+                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onTagRanking(tag) }
             }
             ComicTagGroup("角色", comic.roleList) { tag ->
-                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onTagSearch(tag) }
+                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onSearch(tag) }
             }
             ComicTagGroup("作品", comic.workList) { tag ->
-                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onTagSearch(tag) }
+                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onSearch(tag) }
             }
         }
     }
@@ -383,6 +381,7 @@ private fun ComicHeroCard(
                 comic = comic,
                 modifier = Modifier.width(142.dp),
                 showIdChip = true,
+                copyOnLongPress = true,
             )
             Column(modifier = Modifier.weight(1f)) {
                 ComicHeaderInfo(comic, onTagSearch)
@@ -524,7 +523,13 @@ fun ComicDetailScreen(
             tag = tag,
             templates = localSetting.blockedTagTemplateList,
             onAddToTemplate = { index ->
-                localSettingManager.addTagToBlockedTagTemplate(index, tag)
+                localSetting.blockedTagTemplateList.getOrNull(index)?.let { template ->
+                    localSettingManager.saveBlockedTagTemplate(
+                        index = index,
+                        name = template.name,
+                        tags = template.tagList + tag,
+                    )
+                }
                 tagToAdd = null
                 toastManager.showAsync("已添加到排除模板")
             },
@@ -543,6 +548,10 @@ fun ComicDetailScreen(
 
     fun searchTag(tag: String) {
         mainNavController.navigate("comicSearchResult/${Uri.encode(tag)}")
+    }
+
+    fun searchContentTag(tag: String) {
+        mainNavController.navigate(comicTagSearchRoute(tag))
     }
 
     fun openChapters(comic: Comic) {
@@ -717,6 +726,7 @@ fun ComicDetailScreen(
                             contentAlignment = Alignment.TopCenter,
                         ) {
                             ComicCoverImage(
+                                copyOnLongPress = true,
                                 comic = comic,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -746,7 +756,12 @@ fun ComicDetailScreen(
                                         ComicHeaderInfo(comic, ::searchTag)
                                     }
                                 }
-                                ComicTagCollectionCard(comic, ::searchTag, onTagLongClick = { tagToAdd = it })
+                                ComicTagCollectionCard(
+                                    comic = comic,
+                                    onTagRanking = ::searchContentTag,
+                                    onSearch = ::searchTag,
+                                    onTagLongClick = { tagToAdd = it },
+                                )
                                 ComicDescriptionCard(comic)
                                 ComicChapterDirectoryCard(
                                     comic = comic,
@@ -769,7 +784,12 @@ fun ComicDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         ComicHeroCard(comic, ::searchTag)
-                        ComicTagCollectionCard(comic, ::searchTag, onTagLongClick = { tagToAdd = it })
+                        ComicTagCollectionCard(
+                            comic = comic,
+                            onTagRanking = ::searchContentTag,
+                            onSearch = ::searchTag,
+                            onTagLongClick = { tagToAdd = it },
+                        )
                         ComicDescriptionCard(comic)
                         ComicChapterDirectoryCard(
                             comic = comic,

@@ -131,6 +131,7 @@ fun ChapterSingleSelectDialog(
     currentChapterId: Int?,
     onDismiss: () -> Unit,
     onSelect: (ComicChapter) -> Unit,
+    readChapterIds: Set<Int> = emptySet(),
 ) {
     ChapterDialogLayout(
         title = title,
@@ -157,6 +158,7 @@ fun ChapterSingleSelectDialog(
                         title = chapter.name.ifBlank { "第 ${index + 1} 章" } +
                             if (chapter.isAvailable) "" else "（缓存中）",
                         selected = chapter.id == currentChapterId,
+                        read = chapter.id in readChapterIds,
                         enabled = chapter.isAvailable,
                         onClick = { onSelect(chapter) }
                     )
@@ -220,6 +222,7 @@ private fun SelectableChapterCard(
     enabled: Boolean = true,
     onClick: () -> Unit,
     trailing: @Composable (() -> Unit)? = null,
+    read: Boolean = false,
 ) {
     Surface(
         modifier = Modifier
@@ -230,6 +233,8 @@ private fun SelectableChapterCard(
             MaterialTheme.colorScheme.primaryContainer
         } else if (!enabled) {
             MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.55f)
+        } else if (read) {
+            MaterialTheme.colorScheme.secondaryContainer
         } else {
             MaterialTheme.colorScheme.surfaceContainerLowest
         },
@@ -237,6 +242,8 @@ private fun SelectableChapterCard(
             MaterialTheme.colorScheme.onPrimaryContainer
         } else if (!enabled) {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
+        } else if (read) {
+            MaterialTheme.colorScheme.onSecondaryContainer
         } else {
             MaterialTheme.colorScheme.onSurface
         },

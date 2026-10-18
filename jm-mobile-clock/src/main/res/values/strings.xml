@@ -1,4 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">JM 手表版</string>
+    <string name="app_name">JMcomic Clock</string>
+    <string name="launcher_disguise_default">JMcomic Clock</string>
+    <string name="launcher_disguise_system_tools">系统工具</string>
+    <string name="launcher_disguise_gallery">相册</string>
+    <string name="launcher_disguise_wooden_fish">木鱼</string>
 </resources>

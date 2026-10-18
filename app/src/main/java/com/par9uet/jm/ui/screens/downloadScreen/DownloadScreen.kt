@@ -43,6 +43,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.par9uet.jm.ui.components.CommonScaffold
+import com.par9uet.jm.ui.components.ComicPaginationBar
+import com.par9uet.jm.ui.components.rememberComicListPagination
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.DownloadComicGroup
 import com.par9uet.jm.ui.viewModel.DownloadViewModel
@@ -64,6 +66,8 @@ fun DownloadScreen(
     var completeExpanded by rememberSaveable { mutableStateOf(true) }
     var activeExpanded by rememberSaveable { mutableStateOf(true) }
     var errorExpanded by rememberSaveable { mutableStateOf(true) }
+    val completedPagination = rememberComicListPagination(completeGroups.size)
+    val completePage = completeGroups.drop(completedPagination.firstIndex).take(completedPagination.limit)
 
     CommonScaffold(title = "下载") {
         Column {
@@ -147,7 +151,7 @@ fun DownloadScreen(
                         if (completeExpanded) {
                             item {
                                 CompletedGrid(
-                                    groups = completeGroups,
+                                    groups = completePage,
                                     editing = editState.editing,
                                     selectedIds = editState.selectedIds,
                                     gridColumns = localSetting.downloadGridColumns,
@@ -162,6 +166,17 @@ fun DownloadScreen(
                                         downloadViewModel.enterEdit(group.itemIds)
                                     }
                                 )
+                            }
+                            if (completedPagination.state.enabled) {
+                                item {
+                                    ComicPaginationBar(
+                                        state = completedPagination.state,
+                                        onPageChange = { page ->
+                                            downloadViewModel.clearSelection()
+                                            completedPagination.onPageChange(page)
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
