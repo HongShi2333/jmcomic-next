@@ -136,6 +136,7 @@ class LocalSettingStorage(
                     },
                     blockedTagList = flattenBlockedTagTemplates(migratedTemplates),
                     blockedTagTemplateList = migratedTemplates,
+                    homeCategoryOrder = saved.homeCategoryOrder.orEmpty().filter(String::isNotBlank).distinct(),
                     appLockPassword = savedPassword,
                     appLockPasswordLength = savedPasswordLength,
                     appLockPattern = savedPattern,

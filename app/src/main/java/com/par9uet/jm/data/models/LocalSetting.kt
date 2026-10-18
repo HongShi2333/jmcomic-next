@@ -132,6 +132,7 @@ data class LocalSetting(
     val customColorError: String? = null,
     // 网格列数：0 表示自适应，2-6 表示固定列数
     val homeGridColumns: Int = 0,
+    val homeCategoryOrder: List<String> = emptyList(),
     val collectGridColumns: Int = 0,
     val downloadGridColumns: Int = 0,
     val historyGridColumns: Int = 0,
