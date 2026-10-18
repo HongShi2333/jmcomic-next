@@ -6,6 +6,7 @@ import com.par9uet.jm.retrofit.model.ComicListResponse
 import com.par9uet.jm.retrofit.model.CommentComicResponse
 import com.par9uet.jm.retrofit.model.CommentListResponse
 import com.par9uet.jm.retrofit.model.HomeSwiperComicListItemResponse
+import com.par9uet.jm.retrofit.model.HomeComicPageResponse
 import com.par9uet.jm.retrofit.model.LikeComicResponse
 import com.par9uet.jm.retrofit.model.ResponseWrapper
 import com.par9uet.jm.retrofit.model.WeekRecommendComicResponse
@@ -39,6 +40,12 @@ interface ComicService {
 
     @GET("promote")
     suspend fun getHomeSwiperComicList(): ResponseWrapper<List<HomeSwiperComicListItemResponse>>
+
+    @GET("promote_list")
+    suspend fun getHomePromotePage(@Query("id") id: String, @Query("page") page: Int): ResponseWrapper<HomeComicPageResponse>
+
+    @GET("categories/filter")
+    suspend fun getHomeCategoryPage(@Query("c") category: String, @Query("page") page: Int): ResponseWrapper<HomeComicPageResponse>
 
     @GET("chapter_view_template")
     suspend fun getComicPicList(
