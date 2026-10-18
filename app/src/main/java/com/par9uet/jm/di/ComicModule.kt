@@ -1,6 +1,9 @@
 package com.par9uet.jm.di
 
 import com.par9uet.jm.repository.ComicRepository
+import com.par9uet.jm.repository.ComicTagFilter
+import com.par9uet.jm.storage.ComicTagCacheStorage
+import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.repository.impl.ComicRepositoryImpl
 import com.par9uet.jm.repository.impl.EmbeddedClientManager
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
@@ -13,8 +16,10 @@ import org.koin.dsl.module
 val comicModule = module {
     single { EmbeddedClientManager(get(), get()) }
     single { ComicRepositoryImpl(get(), get(), get(), get(), get(), get()) } bind ComicRepository::class
+    single { ComicTagCacheStorage(get()) }
+    single { ComicTagFilter(get<ComicRepository>()::getComicDetail, get<ComicTagCacheStorage>()) }
 
-    viewModel { ComicViewModel(get(), get()) }
+    viewModel { ComicViewModel(get(), get<LocalSettingManager>().localSettingState, get()) }
     viewModel { ComicDetailViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { ComicReadViewModel(get(), get(), get(), get(), get(), get()) }
 }

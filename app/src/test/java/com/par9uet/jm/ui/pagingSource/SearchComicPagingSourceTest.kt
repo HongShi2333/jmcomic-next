@@ -3,6 +3,8 @@ package com.par9uet.jm.ui.pagingSource
 import androidx.paging.PagingSource
 import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
+import com.par9uet.jm.data.models.HomeCategoryPageSource
+import com.par9uet.jm.data.models.HomeComicPage
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.CollectComicResponse
 import com.par9uet.jm.retrofit.model.ComicDetailResponse
@@ -46,6 +48,11 @@ class SearchComicPagingSourceTest {
     }
 
     private class FakeComicRepository : ComicRepository {
+        override suspend fun getHomeCategoryPage(
+            source: HomeCategoryPageSource,
+            page: Int,
+        ): NetWorkResult<HomeComicPage> = unused()
+
         var lastSearchContent: String? = null
 
         override suspend fun getComicList(

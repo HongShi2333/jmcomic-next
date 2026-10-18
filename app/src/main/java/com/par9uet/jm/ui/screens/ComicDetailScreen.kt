@@ -1,7 +1,9 @@
 package com.par9uet.jm.ui.screens
 
 import android.net.Uri
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -67,6 +69,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.shape.CircleShape
@@ -82,8 +85,10 @@ import com.par9uet.jm.storage.ComicReadHistory
 import com.par9uet.jm.store.DownloadManager
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ReadHistoryManager
+import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.components.ChapterMultiSelectDialog
+import com.par9uet.jm.ui.components.AddTagToTemplateDialog
 import com.par9uet.jm.ui.components.ComicCoverImage
 import com.par9uet.jm.ui.viewModel.ComicDetailViewModel
 import com.par9uet.jm.utils.shimmer
@@ -274,32 +279,40 @@ private fun ComicTagGroup(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ComicDetailTag(
     label: String,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
-    AssistChip(
-        onClick = onClick,
-        border = null,
-        colors = AssistChipDefaults.assistChipColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer,
-            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ),
-        label = {
-            Text(
-                text = label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-    )
+    Surface(
+        modifier = Modifier
+            .padding(vertical = 4.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = "添加到排除模板",
+            ),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Text(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
 private fun ComicTagCollectionCard(
     comic: Comic,
     onTagSearch: (String) -> Unit,
+    onTagLongClick: (String) -> Unit,
 ) {
     if (comic.tagList.isEmpty() && comic.roleList.isEmpty() && comic.workList.isEmpty()) return
     Surface(
@@ -317,13 +330,13 @@ private fun ComicTagCollectionCard(
                 fontWeight = FontWeight.SemiBold,
             )
             ComicTagGroup("标签", comic.tagList) { tag ->
-                ComicDetailTag(tag) { onTagSearch(tag) }
+                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onTagSearch(tag) }
             }
             ComicTagGroup("角色", comic.roleList) { tag ->
-                ComicDetailTag(tag) { onTagSearch(tag) }
+                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onTagSearch(tag) }
             }
             ComicTagGroup("作品", comic.workList) { tag ->
-                ComicDetailTag(tag) { onTagSearch(tag) }
+                ComicDetailTag(tag, onLongClick = { onTagLongClick(tag) }) { onTagSearch(tag) }
             }
         }
     }
@@ -503,6 +516,26 @@ fun ComicDetailScreen(
     val isLogin by userManager.isLoginState.collectAsState(false)
     var showDownloadChapterDialog by remember { mutableStateOf(false) }
     var selectedChapterIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var tagToAdd by rememberSaveable(id) { mutableStateOf<String?>(null) }
+    val toastManager: ToastManager = getKoin().get()
+
+    tagToAdd?.let { tag ->
+        AddTagToTemplateDialog(
+            tag = tag,
+            templates = localSetting.blockedTagTemplateList,
+            onAddToTemplate = { index ->
+                localSettingManager.addTagToBlockedTagTemplate(index, tag)
+                tagToAdd = null
+                toastManager.showAsync("已添加到排除模板")
+            },
+            onCreateTemplate = { name ->
+                localSettingManager.saveBlockedTagTemplate(null, name, listOf(tag))
+                tagToAdd = null
+                toastManager.showAsync("已创建排除模板")
+            },
+            onDismiss = { tagToAdd = null },
+        )
+    }
 
     fun requireLogin(action: () -> Unit) {
         if (isLogin) action() else mainNavController.navigate("login")
@@ -713,7 +746,7 @@ fun ComicDetailScreen(
                                         ComicHeaderInfo(comic, ::searchTag)
                                     }
                                 }
-                                ComicTagCollectionCard(comic, ::searchTag)
+                                ComicTagCollectionCard(comic, ::searchTag, onTagLongClick = { tagToAdd = it })
                                 ComicDescriptionCard(comic)
                                 ComicChapterDirectoryCard(
                                     comic = comic,
@@ -736,7 +769,7 @@ fun ComicDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         ComicHeroCard(comic, ::searchTag)
-                        ComicTagCollectionCard(comic, ::searchTag)
+                        ComicTagCollectionCard(comic, ::searchTag, onTagLongClick = { tagToAdd = it })
                         ComicDescriptionCard(comic)
                         ComicChapterDirectoryCard(
                             comic = comic,

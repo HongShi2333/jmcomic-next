@@ -4,6 +4,9 @@ import com.par9uet.jm.data.models.COMIC_API_SOURCE_BUILTIN
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_MIXED
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_NETWORK
 import com.par9uet.jm.data.models.ComicSearchOrderFilter
+import com.par9uet.jm.data.models.HomeCategoryPageKind
+import com.par9uet.jm.data.models.HomeCategoryPageSource
+import com.par9uet.jm.data.models.HomeComicPage
 import com.par9uet.jm.repository.BaseRepository
 import com.par9uet.jm.repository.ComicRepository
 import com.par9uet.jm.retrofit.model.CollectComicResponse
@@ -15,6 +18,7 @@ import com.par9uet.jm.retrofit.model.ComicPicListResponse
 import com.par9uet.jm.retrofit.model.CommentComicResponse
 import com.par9uet.jm.retrofit.model.CommentListResponse
 import com.par9uet.jm.retrofit.model.HomeSwiperComicListItemResponse
+import com.par9uet.jm.retrofit.model.toComic
 import com.par9uet.jm.retrofit.model.LikeComicResponse
 import com.par9uet.jm.retrofit.model.NetWorkResult
 import com.par9uet.jm.retrofit.model.WeekRecommendComicResponse
@@ -226,6 +230,54 @@ class ComicRepositoryImpl(
                 }
             }
         }
+    }
+
+    override suspend fun getHomeCategoryPage(source: HomeCategoryPageSource, page: Int): NetWorkResult<HomeComicPage> =
+        retryNetworkRequest("首页后续漫画") {
+            withContext(Dispatchers.IO) {
+                val items = if (source.kind == HomeCategoryPageKind.BUILTIN) {
+                    val client = getEmbeddedClient()
+                    val albums = when (source.value) {
+                        "builtin_latest" -> client.getLatest(page).content()
+                        "builtin_serialization" -> client.getSerialization(page).content()
+                        else -> client.getCategories(homeCategoryQuery(source.value, page)).content()
+                    }
+                    albums.orEmpty().map { it.toHomeListItem() }
+                } else {
+                    val response = safeApiCall {
+                        if (source.kind == HomeCategoryPageKind.CATEGORY) service.getHomeCategoryPage(source.value, page)
+                        else service.getHomePromotePage(source.value, page)
+                    }
+                    when (response) {
+                        is NetWorkResult.Error -> return@withContext response
+                        is NetWorkResult.Success -> response.data.list
+                            ?: return@withContext NetWorkResult.Error("后续页未返回漫画列表")
+                    }
+                }
+                NetWorkResult.Success(HomeComicPage(
+                    comics = items.map { it.toComic() },
+                    nextPage = if (items.isEmpty()) null else page + 1,
+                ))
+            }
+        }
+
+    private fun homeCategoryQuery(id: String, page: Int): SearchQuery {
+        val builder = SearchQuery.Builder().page(page)
+        when (id) {
+            "builtin_doujin" -> builder.category(Category.DOUJIN)
+            "builtin_single" -> builder.category(Category.SINGLE)
+            "builtin_short" -> builder.category(Category.SHORT)
+            "builtin_korean" -> builder.category(Category.KOREAN)
+            "builtin_american" -> builder.category(Category.AMERICAN)
+            "builtin_cosplay" -> builder.category(Category.COSPLAY)
+            "builtin_3d" -> builder.category(Category.IMAGE_3D)
+            "builtin_week_hot" -> builder.orderBy(OrderBy.MOST_VIEWED).time(TimeOption.WEEK)
+            "builtin_month_hot" -> builder.orderBy(OrderBy.MOST_VIEWED).time(TimeOption.MONTH)
+            "builtin_most_liked" -> builder.orderBy(OrderBy.MOST_LIKED).time(TimeOption.ALL)
+            "builtin_most_images" -> builder.orderBy(OrderBy.MOST_IMAGES).time(TimeOption.ALL)
+            else -> error("该首页分类不支持分页")
+        }
+        return builder.build()
     }
 
     override suspend fun getComicPicList(id: Int, shunt: String): NetWorkResult<ComicPicListResponse> {
@@ -669,16 +721,14 @@ class ComicRepositoryImpl(
                 currentCoroutineContext().ensureActive()
                 val client = getEmbeddedClient()
                 coroutineScope {
-                    suspend fun loadCategoryPages(buildQuery: (Int) -> SearchQuery): List<HomeSwiperComicListItemResponse.ListItem> {
-                        return (1..2).flatMap { page ->
-                            try {
-                                client.getCategories(buildQuery(page)).content().orEmpty().map { it.toHomeListItem() }
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (_: Exception) {
-                                emptyList()
-                            }
-                        }.distinctBy { it.id }
+                    suspend fun loadCategoryFirstPage(id: String): List<HomeSwiperComicListItemResponse.ListItem> {
+                        return try {
+                            client.getCategories(homeCategoryQuery(id, 1)).content().orEmpty().map { it.toHomeListItem() }.distinctBy { it.id }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            emptyList()
+                        }
                     }
                     // 并发拉取各分类首页数据，单个分类失败不影响其他分类
                     val latestDeferred = async {
@@ -709,18 +759,18 @@ class ComicRepositoryImpl(
                         }
                     }
                     // 按分类 + 排序维度
-                    val doujinDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().category(Category.DOUJIN).page(page).build() } }
-                    val singleDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().category(Category.SINGLE).page(page).build() } }
-                    val shortDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().category(Category.SHORT).page(page).build() } }
-                    val koreanDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().category(Category.KOREAN).page(page).build() } }
-                    val americanDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().category(Category.AMERICAN).page(page).build() } }
-                    val cosplayDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().category(Category.COSPLAY).page(page).build() } }
-                    val image3dDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().category(Category.IMAGE_3D).page(page).build() } }
+                    val doujinDeferred = async { loadCategoryFirstPage("builtin_doujin") }
+                    val singleDeferred = async { loadCategoryFirstPage("builtin_single") }
+                    val shortDeferred = async { loadCategoryFirstPage("builtin_short") }
+                    val koreanDeferred = async { loadCategoryFirstPage("builtin_korean") }
+                    val americanDeferred = async { loadCategoryFirstPage("builtin_american") }
+                    val cosplayDeferred = async { loadCategoryFirstPage("builtin_cosplay") }
+                    val image3dDeferred = async { loadCategoryFirstPage("builtin_3d") }
                     // 按排序维度
-                    val weekHotDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().orderBy(OrderBy.MOST_VIEWED).time(TimeOption.WEEK).page(page).build() } }
-                    val monthHotDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().orderBy(OrderBy.MOST_VIEWED).time(TimeOption.MONTH).page(page).build() } }
-                    val mostLikedDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().orderBy(OrderBy.MOST_LIKED).time(TimeOption.ALL).page(page).build() } }
-                    val mostImagesDeferred = async { loadCategoryPages { page -> SearchQuery.Builder().orderBy(OrderBy.MOST_IMAGES).time(TimeOption.ALL).page(page).build() } }
+                    val weekHotDeferred = async { loadCategoryFirstPage("builtin_week_hot") }
+                    val monthHotDeferred = async { loadCategoryFirstPage("builtin_month_hot") }
+                    val mostLikedDeferred = async { loadCategoryFirstPage("builtin_most_liked") }
+                    val mostImagesDeferred = async { loadCategoryFirstPage("builtin_most_images") }
 
                     val builtinCategories = listOf(
                         HomeSwiperComicListItemResponse("builtin_latest", "最新上架", "builtin_latest", "builtin", "", latestDeferred.await()),
@@ -752,7 +802,7 @@ class ComicRepositoryImpl(
                                             id = "pref_${item.id}",
                                             title = item.title,
                                             slug = item.slug,
-                                            type = "preference",
+                                            type = item.type,
                                             filter_val = item.filter_val,
                                             content = item.content
                                         )
