@@ -100,10 +100,18 @@ internal fun ComicPageRead(
     val pageContent: @Composable (Int) -> Unit = { page ->
         val item = list.getOrNull(page)
         if (item != null) {
+            // 只允许当前页参与缩放，否则相邻页会跟着共享的缩放状态一起放大并露出第二张图。
+            val isCurrentPage = page == pagerState.currentPage
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .readerZoomable(zoomState)
+                    .then(
+                        if (isCurrentPage) {
+                            Modifier.readerZoomable(zoomState)
+                        } else {
+                            Modifier
+                        }
+                    )
             ) {
                 ComicPicImage(
                     comicPicImageState = item,
