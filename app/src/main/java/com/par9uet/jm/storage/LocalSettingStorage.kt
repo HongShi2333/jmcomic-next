@@ -17,6 +17,9 @@ import com.par9uet.jm.data.models.COVER_CACHE_MAX_DURATION_HOURS
 import com.par9uet.jm.data.models.DEFAULT_COVER_CACHE_DURATION_HOURS
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.data.models.READER_BACKGROUND_BLACK
+import com.par9uet.jm.data.models.READER_BACKGROUND_LIST
+import com.par9uet.jm.data.models.normalizeReadMode
 import com.par9uet.jm.utils.flattenBlockedTagTemplates
 import com.par9uet.jm.utils.normalizeBlockedTagList
 import com.par9uet.jm.utils.normalizeBlockedTagTemplates
@@ -250,6 +253,24 @@ class LocalSettingStorage(
                     readerDarkBrightnessPercent = if (savedJson.hasField("readerDarkBrightnessPercent")) {
                         saved.readerDarkBrightnessPercent.coerceIn(1, 100)
                     } else 30,
+                    readMode = normalizeReadMode(runCatching { saved.readMode }.getOrNull()),
+                    readerBackground = if (savedJson.hasField("readerBackground")) {
+                        runCatching { saved.readerBackground }.getOrNull()
+                            ?.takeIf { it in READER_BACKGROUND_LIST } ?: READER_BACKGROUND_BLACK
+                    } else {
+                        READER_BACKGROUND_BLACK
+                    },
+                    readerShowTapZones = savedJson.hasField("readerShowTapZones") && saved.readerShowTapZones,
+                    readerDoubleTapZoomEnabled = if (savedJson.hasField("readerDoubleTapZoomEnabled")) {
+                        saved.readerDoubleTapZoomEnabled
+                    } else {
+                        true
+                    },
+                    readerShowPageNumber = if (savedJson.hasField("readerShowPageNumber")) {
+                        saved.readerShowPageNumber
+                    } else {
+                        true
+                    },
                     woodenFishCount = if (savedJson.hasField("woodenFishCount")) {
                         saved.woodenFishCount.coerceAtLeast(0L)
                     } else {

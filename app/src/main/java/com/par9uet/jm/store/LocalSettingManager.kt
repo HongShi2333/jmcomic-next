@@ -5,6 +5,9 @@ import com.par9uet.jm.data.models.AiChatModel
 import com.par9uet.jm.data.models.COVER_CACHE_MAX_DURATION_HOURS
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.data.models.READER_BACKGROUND_BLACK
+import com.par9uet.jm.data.models.READER_BACKGROUND_LIST
+import com.par9uet.jm.data.models.normalizeReadMode
 import com.par9uet.jm.storage.LocalSettingStorage
 import com.par9uet.jm.task.AppInitTask
 import com.par9uet.jm.task.AppTaskInfo
@@ -82,16 +85,26 @@ class LocalSettingManager(
     fun updatePrefetchCount(prefetchCount: String) =
         updateSetting { it.copy(prefetchCount = prefetchCount.toInt()) }
 
-    fun updateReadMode(readMode: String) = updateSetting { it.copy(readMode = readMode) }
+    fun updateReadMode(readMode: String) = updateSetting {
+        it.copy(readMode = normalizeReadMode(readMode))
+    }
 
-    fun closeShowComicScrollReadTip() =
-        updateSetting { it.copy(showComicScrollReadTip = false) }
+    fun updateReaderBackground(background: String) = updateSetting {
+        it.copy(
+            readerBackground = background.takeIf { value ->
+                value in READER_BACKGROUND_LIST
+            } ?: READER_BACKGROUND_BLACK
+        )
+    }
 
-    fun closeShowComicPageReadTip() =
-        updateSetting { it.copy(showComicPageReadTip = false) }
+    fun updateReaderShowTapZones(enabled: Boolean) =
+        updateSetting { it.copy(readerShowTapZones = enabled) }
 
-    fun updateReadTapMode(readTapMode: String) =
-        updateSetting { it.copy(readTapMode = readTapMode) }
+    fun updateReaderDoubleTapZoomEnabled(enabled: Boolean) =
+        updateSetting { it.copy(readerDoubleTapZoomEnabled = enabled) }
+
+    fun updateReaderShowPageNumber(enabled: Boolean) =
+        updateSetting { it.copy(readerShowPageNumber = enabled) }
 
     fun updateShowComicIdAsSubtitle(enabled: Boolean) =
         updateSetting { it.copy(showComicIdAsSubtitle = enabled) }
@@ -385,6 +398,7 @@ class LocalSettingManager(
         val previousLauncherDisguise = _localSettingState.value.launcherDisguise
         updateSetting { current ->
             setting.copy(
+                readMode = normalizeReadMode(setting.readMode),
                 appLockEnabled = current.appLockEnabled,
                 appLockPassword = current.appLockPassword,
                 appLockPasswordLength = current.appLockPasswordLength,

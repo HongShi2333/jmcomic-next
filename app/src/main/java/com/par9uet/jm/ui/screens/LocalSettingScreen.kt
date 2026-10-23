@@ -128,7 +128,6 @@ private sealed class SettingType {
     object Shunt : SettingType()
     object PrefetchCount : SettingType()
     object ReadMode : SettingType()
-    object ReadTapMode : SettingType()
     object NotificationManagement : SettingType()
     object RecommendSource : SettingType()
     object AllGridColumns : SettingType()
@@ -384,13 +383,6 @@ fun LocalSettingScreen(
                     }
                     SettingsRow(Icons.AutoMirrored.Rounded.MenuBook, "\u9605\u8bfb\u6a21\u5f0f", readModeText(localSetting.readMode)) {
                         openSetting(SettingType.ReadMode)
-                    }
-                    SettingsRow(
-                        Icons.Rounded.Tune,
-                        "\u70b9\u51fb\u7ffb\u56fe",
-                        if (localSetting.readTapMode == "side") "\u5de6\u53f3\u4e24\u4fa7" else "\u9ed8\u8ba4\u533a\u57df"
-                    ) {
-                        openSetting(SettingType.ReadTapMode)
                     }
                     SettingsSwitchRow(
                         icon = Icons.Rounded.Image,
@@ -649,17 +641,11 @@ private fun SettingSelectDialogContent(
     val readModeOptionList by remember {
         derivedStateOf {
             listOf(
-                SelectOption("\u6eda\u52a8", "scroll"),
-                SelectOption("\u7ffb\u9875", "page"),
-                SelectOption("\u70b9\u51fb", "tap")
-            )
-        }
-    }
-    val readTapModeOptionList by remember {
-        derivedStateOf {
-            listOf(
-                SelectOption("\u9ed8\u8ba4\u533a\u57df", "default"),
-                SelectOption("\u5de6\u53f3\u4e24\u4fa7", "side")
+                SelectOption("\u4ece\u5de6\u5230\u53f3\u7ffb\u9875", "page"),
+                SelectOption("\u4ece\u53f3\u5230\u5de6\u7ffb\u9875", "rtl"),
+                SelectOption("\u7ad6\u5411\u7ffb\u9875", "vertical"),
+                SelectOption("\u8fde\u7eed\u7ad6\u5411\uff08Webtoon\uff09", "scroll"),
+                SelectOption("\u8fde\u7eed\u6a2a\u5411", "horizontal")
             )
         }
     }
@@ -702,7 +688,6 @@ private fun SettingSelectDialogContent(
             is SettingType.Shunt -> shuntOptionList
             is SettingType.PrefetchCount -> prefetchCountOptionList
             is SettingType.ReadMode -> readModeOptionList
-            is SettingType.ReadTapMode -> readTapModeOptionList
             is SettingType.NotificationManagement -> notificationOptionList
             is SettingType.RecommendSource -> recommendSourceOptionList
             is SettingType.ReadDecodeConcurrency -> readDecodeConcurrencyOptionList
@@ -726,7 +711,6 @@ private fun SettingSelectDialogContent(
                 is SettingType.Shunt -> localSettingManager.updateShunt(it)
                 is SettingType.PrefetchCount -> localSettingManager.updatePrefetchCount(it)
                 is SettingType.ReadMode -> localSettingManager.updateReadMode(it)
-                is SettingType.ReadTapMode -> localSettingManager.updateReadTapMode(it)
                 is SettingType.NotificationManagement -> {
                     localSettingManager.updateNotificationSettings(
                         show = it != NOTIFICATION_OFF,
@@ -1131,10 +1115,11 @@ private fun prefetchText(value: Int): String {
 
 private fun readModeText(value: String): String {
     return when (value) {
-        "scroll" -> "\u6eda\u52a8"
-        "page" -> "\u7ffb\u9875"
-        "tap" -> "\u70b9\u51fb"
-        else -> "\u6eda\u52a8"
+        "page" -> "\u4ece\u5de6\u5230\u53f3\u7ffb\u9875"
+        "rtl" -> "\u4ece\u53f3\u5230\u5de6\u7ffb\u9875"
+        "vertical" -> "\u7ad6\u5411\u7ffb\u9875"
+        "horizontal" -> "\u8fde\u7eed\u6a2a\u5411"
+        else -> "\u8fde\u7eed\u7ad6\u5411\uff08Webtoon\uff09"
     }
 }
 
@@ -1161,7 +1146,6 @@ private fun settingTitle(type: SettingType): String {
         is SettingType.Shunt -> "\u56fe\u7247\u7ebf\u8def"
         is SettingType.PrefetchCount -> "\u56fe\u7247\u9884\u52a0\u8f7d"
         is SettingType.ReadMode -> "\u9605\u8bfb\u6a21\u5f0f"
-        is SettingType.ReadTapMode -> "\u70b9\u51fb\u7ffb\u56fe"
         is SettingType.NotificationManagement -> "\u901a\u77e5\u7ba1\u7406"
         is SettingType.RecommendSource -> "\u63a8\u8350\u6e90"
         is SettingType.AllGridColumns -> "\u7f51\u683c\u5217\u6570"
@@ -1180,7 +1164,6 @@ private fun settingValue(type: SettingType, localSetting: LocalSetting): String 
         is SettingType.Shunt -> localSetting.shunt
         is SettingType.PrefetchCount -> "${localSetting.prefetchCount}"
         is SettingType.ReadMode -> localSetting.readMode
-        is SettingType.ReadTapMode -> localSetting.readTapMode
         is SettingType.NotificationManagement -> when {
             !localSetting.showComicCacheNotification -> NOTIFICATION_OFF
             localSetting.showComicCacheNotificationName -> NOTIFICATION_ON_WITH_NAME

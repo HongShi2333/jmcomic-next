@@ -5,34 +5,25 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.outlined.Message
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -53,30 +44,33 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.par9uet.jm.data.models.Comic
 import com.par9uet.jm.data.models.ComicChapter
+import com.par9uet.jm.data.models.READER_BACKGROUND_THEME
+import com.par9uet.jm.data.models.READER_BACKGROUND_WHITE
+import com.par9uet.jm.data.models.READ_MODE_HORIZONTAL
+import com.par9uet.jm.data.models.READ_MODE_RTL
+import com.par9uet.jm.data.models.READ_MODE_VERTICAL
+import com.par9uet.jm.data.models.READ_MODE_WEBTOON
 import com.par9uet.jm.store.DownloadManager
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ReadHistoryManager
 import com.par9uet.jm.store.UserManager
-import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.components.adaptiveDialogMaxHeight
+import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
 import com.par9uet.jm.utils.VolumeKeyPageTurnDispatcher
 import org.koin.androidx.compose.koinViewModel
@@ -120,15 +114,27 @@ fun ComicReadScreen(
     val readHistory by readHistoryManager.readHistoryState.collectAsState()
     val comic = comicDetailState.data
     val loading = comicPicState.isLoading
-    val initialReaderIndex = if (size > 0) currentIndexState.coerceIn(0, size - 1) else 0
-    val lazyListState = rememberLazyListState(initialFirstVisibleItemIndex = initialReaderIndex)
-    val pagerState = rememberPagerState(initialPage = initialReaderIndex) { size }
+    val readMode = localSetting.readMode
+    val isContinuous = readMode == READ_MODE_WEBTOON || readMode == READ_MODE_HORIZONTAL
     val zoomState = rememberReaderZoomState()
-    var targetIndex by remember { mutableIntStateOf(initialReaderIndex) }
+    var targetIndex by remember { mutableIntStateOf(0) }
     var activeDialog by remember { mutableStateOf<ReadPanelDialog?>(null) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     var selectedCacheChapterIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var loadedComicId by comicReadViewModel.loadedComicId
     val readHistoryComicId by comicReadViewModel.readHistoryComicId
+
+    val readerBackgroundColor = when (localSetting.readerBackground) {
+        READER_BACKGROUND_WHITE -> Color.White
+        READER_BACKGROUND_THEME -> MaterialTheme.colorScheme.background
+        else -> Color.Black
+    }
+    val readerContentColor = when (localSetting.readerBackground) {
+        READER_BACKGROUND_WHITE -> Color.Black
+        READER_BACKGROUND_THEME -> MaterialTheme.colorScheme.onBackground
+        else -> Color.White
+    }
+
     val readChapterIds = remember(
         readHistory,
         readHistoryComicId,
@@ -148,6 +154,7 @@ fun ComicReadScreen(
     val chapterIndex = remember(readableChapters, comicId) {
         readableChapters.indexOfFirst { it.id == comicId }
     }
+    val currentChapter = readableChapters.getOrNull(chapterIndex)
     val previousChapter = remember(readableChapters, chapterIndex) {
         readableChapters.getOrNull(chapterIndex - 1)
     }
@@ -170,12 +177,11 @@ fun ComicReadScreen(
         }
     }
 
-    fun updateIndexFromReader(value: Float) {
-        val target = value.toInt().coerceIn(0, maxOf(0, size - 1))
-        if (target != currentIndexState && localSetting.readMode != "scroll") {
+    fun updateIndexFromReader(index: Int) {
+        val target = index.coerceIn(0, maxOf(0, size - 1))
+        if (!isContinuous && target != currentIndexState) {
             zoomState.reset()
         }
-        // Keep the toolbar and reading-memory state driven by one observable source.
         currentIndexState = target
     }
 
@@ -239,6 +245,14 @@ fun ComicReadScreen(
         }
     }
 
+    // 切换阅读模式时保持当前页，并还原缩放
+    LaunchedEffect(readMode) {
+        zoomState.reset()
+        if (size > 0) {
+            targetIndex = currentIndexState.coerceIn(0, size - 1)
+        }
+    }
+
     // 退出阅读时保存当前页数进度
     val latestPageIndex by rememberUpdatedState(currentIndexState)
     val latestPageCount by rememberUpdatedState(size)
@@ -257,17 +271,6 @@ fun ComicReadScreen(
         }
     }
 
-    // 数据加载完成后，滚动到恢复的页码
-    LaunchedEffect(size, loadedComicId) {
-        if (size > 0 && loadedComicId == comicId && targetIndex in 0 until size) {
-            if (localSetting.readMode == "scroll") {
-                lazyListState.scrollToItem(targetIndex)
-            } else {
-                pagerState.scrollToPage(targetIndex)
-            }
-        }
-    }
-
     val view = LocalView.current
     val controller = remember(view) {
         val window = (context as? Activity)?.window
@@ -282,70 +285,153 @@ fun ComicReadScreen(
     }
     LaunchedEffect(isShowToolbar) {
         if (isShowToolbar) {
-            controller?.show(WindowInsetsCompat.Type.statusBars())
+            // 阅读器顶/底栏始终是深色，系统栏图标需要保持浅色。
+            controller?.isAppearanceLightStatusBars = false
+            controller?.isAppearanceLightNavigationBars = false
+            controller?.show(WindowInsetsCompat.Type.systemBars())
         } else {
-            controller?.hide(WindowInsetsCompat.Type.statusBars())
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
         }
     }
+    val darkSystemBarIcons = MaterialTheme.colorScheme.background.luminance() > 0.5f
     DisposableEffect(Unit) {
         onDispose {
-            controller?.show(WindowInsetsCompat.Type.statusBars())
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+            controller?.isAppearanceLightStatusBars = darkSystemBarIcons
+            controller?.isAppearanceLightNavigationBars = darkSystemBarIcons
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    val initialIndex = if (size > 0) currentIndexState.coerceIn(0, size - 1) else 0
+    val readerTitle = if (localOnly) {
+        "本地阅读"
+    } else {
+        comic?.name.orEmpty().ifBlank { "阅读" }
+    }
+    val chapterLabel = currentChapter?.name.orEmpty().ifBlank {
+        if (chapterIndex >= 0) "第 ${chapterIndex + 1} 话" else ""
+    }
+    val subtitle = if (localOnly) {
+        chapterLabel.ifBlank { "本地缓存" }
+    } else {
+        chapterLabel
+    }
+    val doubleTapZoomEnabled = localSetting.readerDoubleTapZoomEnabled
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(readerBackgroundColor)
+    ) {
         if (loading) {
-            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = readerContentColor.copy(alpha = 0.7f),
+            )
         } else if (size <= 0) {
             Text(
                 text = comicPicState.errorMsg.orEmpty().ifBlank { "暂无可阅读图片" },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.Center)
+                color = readerContentColor.copy(alpha = 0.7f),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 24.dp)
             )
         } else {
-            Box(Modifier.fillMaxSize().drawWithContent {
-                drawContent()
-                if (dimmingAlpha > 0f) drawRect(Color.Black.copy(alpha = dimmingAlpha))
-            }) {
-                if (localSetting.readMode == "scroll") {
-                    ComicScrollRead(
-                        lazyListState = lazyListState,
-                        pagerState = pagerState,
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawWithContent {
+                        drawContent()
+                        if (dimmingAlpha > 0f) {
+                            drawRect(Color.Black.copy(alpha = dimmingAlpha))
+                        }
+                    }
+            ) {
+                when (readMode) {
+                    READ_MODE_WEBTOON -> ComicContinuousRead(
+                        horizontal = false,
+                        initialIndex = initialIndex,
                         targetIndex = targetIndex,
                         zoomState = zoomState,
                         comicReadViewModel = comicReadViewModel,
-                        onUpdateSliderValue = { updateIndexFromReader(it) }
+                        doubleTapZoomEnabled = doubleTapZoomEnabled,
+                        onIndexChange = ::updateIndexFromReader,
                     )
-                } else {
-                    ComicPageRead(
-                        lazyListState = lazyListState,
-                        pagerState = pagerState,
+
+                    READ_MODE_HORIZONTAL -> ComicContinuousRead(
+                        horizontal = true,
+                        initialIndex = initialIndex,
                         targetIndex = targetIndex,
                         zoomState = zoomState,
                         comicReadViewModel = comicReadViewModel,
-                        tapOnly = localSetting.readMode == "tap",
-                        onUpdateSliderValue = { updateIndexFromReader(it) }
+                        doubleTapZoomEnabled = false,
+                        onIndexChange = ::updateIndexFromReader,
+                    )
+
+                    READ_MODE_VERTICAL -> ComicPageRead(
+                        initialIndex = initialIndex,
+                        targetIndex = targetIndex,
+                        direction = ReaderPageDirection.Vertical,
+                        zoomState = zoomState,
+                        comicReadViewModel = comicReadViewModel,
+                        doubleTapZoomEnabled = doubleTapZoomEnabled,
+                        onIndexChange = ::updateIndexFromReader,
+                    )
+
+                    READ_MODE_RTL -> ComicPageRead(
+                        initialIndex = initialIndex,
+                        targetIndex = targetIndex,
+                        direction = ReaderPageDirection.RightToLeft,
+                        zoomState = zoomState,
+                        comicReadViewModel = comicReadViewModel,
+                        doubleTapZoomEnabled = doubleTapZoomEnabled,
+                        onIndexChange = ::updateIndexFromReader,
+                    )
+
+                    else -> ComicPageRead(
+                        initialIndex = initialIndex,
+                        targetIndex = targetIndex,
+                        direction = ReaderPageDirection.LeftToRight,
+                        zoomState = zoomState,
+                        comicReadViewModel = comicReadViewModel,
+                        doubleTapZoomEnabled = doubleTapZoomEnabled,
+                        onIndexChange = ::updateIndexFromReader,
                     )
                 }
             }
+            if (isShowToolbar && localSetting.readerShowTapZones) {
+                ReaderTapZoneHints(rightToLeft = readMode == READ_MODE_RTL)
+            }
+            if (!isShowToolbar && localSetting.readerShowPageNumber) {
+                ReaderPageIndicator(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 12.dp),
+                    currentIndex = currentIndexState,
+                    pageCount = size,
+                )
+            }
             AnimatedVisibility(
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 10.dp),
+                modifier = Modifier.align(Alignment.TopCenter),
                 visible = isShowToolbar,
-                enter = slideInHorizontally(
-                    initialOffsetX = { fullWidth -> -fullWidth },
+                enter = slideInVertically(
+                    initialOffsetY = { fullHeight -> -fullHeight },
                     animationSpec = tween(durationMillis = 250)
                 ) + fadeIn(),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { fullWidth -> -fullWidth },
+                exit = slideOutVertically(
+                    targetOffsetY = { fullHeight -> -fullHeight },
                     animationSpec = tween(durationMillis = 250)
                 ) + fadeOut()
             ) {
-                ReadSideBar(
-                    comic = comic,
-                    localOnly = localOnly,
-                    chapterEnabled = readableChapters.isNotEmpty(),
+                ReaderTopBar(
+                    title = readerTitle,
+                    subtitle = subtitle,
+                    isCollected = comic?.isCollect == true,
+                    canCollect = !localOnly && comic != null,
+                    canComment = !localOnly,
+                    canDownload = !localOnly && comic != null,
+                    onBack = { mainNavController.popBackStack() },
                     onToggleCollect = {
                         if (!isLogin) {
                             mainNavController.navigate("login")
@@ -359,7 +445,14 @@ fun ComicReadScreen(
                             }
                         }
                     },
-                    onCache = {
+                    onComment = {
+                        if (!isLogin) {
+                            mainNavController.navigate("login")
+                        } else {
+                            mainNavController.navigate("comment/$comicId")
+                        }
+                    },
+                    onDownload = {
                         comic?.let { currentComic ->
                             if (currentComic.comicChapterList.isEmpty()) {
                                 downloadManager.downloadComic(currentComic)
@@ -370,14 +463,7 @@ fun ComicReadScreen(
                             }
                         }
                     },
-                    onComment = {
-                        if (!isLogin) {
-                            mainNavController.navigate("login")
-                        } else {
-                            mainNavController.navigate("comment/$comicId")
-                        }
-                    },
-                    onChapterJump = {
+                    onChapterList = {
                         if (readableChapters.isNotEmpty()) {
                             activeDialog = ReadPanelDialog.Chapter
                         }
@@ -389,69 +475,74 @@ fun ComicReadScreen(
                 visible = isShowToolbar,
                 enter = slideInVertically(
                     initialOffsetY = { fullHeight -> fullHeight },
-                    animationSpec = tween(durationMillis = 300)
+                    animationSpec = tween(durationMillis = 250)
                 ) + fadeIn(),
                 exit = slideOutVertically(
                     targetOffsetY = { fullHeight -> fullHeight },
-                    animationSpec = tween(durationMillis = 300)
+                    animationSpec = tween(durationMillis = 250)
                 ) + fadeOut()
             ) {
-                ToolsBar(
+                ReaderBottomBar(
                     currentIndex = currentIndexState,
                     pageCount = size,
+                    readingMode = readMode,
                     previousChapterEnabled = previousChapter != null,
                     nextChapterEnabled = nextChapter != null,
-                    showResetZoom = zoomState.isZoomed,
+                    zoomed = zoomState.isZoomed,
                     onPreviousChapter = { navigateToChapter(previousChapter) },
                     onNextChapter = { navigateToChapter(nextChapter) },
                     onPageSelected = { jumpToIndex(it) },
-                    onResetZoom = { zoomState.reset() },
-                    brightnessPercent = brightnessPercent,
-                    brightnessOverridden = brightnessOverride > 0,
-                    onBrightnessChange = { brightnessOverride = it.coerceIn(1, 100) },
-                    onRestoreBrightness = { brightnessOverride = 0 },
-                )
-            }
-            AnimatedVisibility(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 12.dp, top = 12.dp),
-                visible = isShowToolbar,
-                enter = slideInHorizontally(
-                    initialOffsetX = { fullWidth -> -fullWidth },
-                    animationSpec = tween(durationMillis = 250)
-                ) + fadeIn(),
-                exit = slideOutHorizontally(
-                    targetOffsetX = { fullWidth -> -fullWidth },
-                    animationSpec = tween(durationMillis = 250)
-                ) + fadeOut()
-            ) {
-                ReaderExitButton(
-                    onClick = { mainNavController.popBackStack() }
-                )
-            }
-            if (localSetting.showComicPageReadTip && localSetting.readMode == "page" || localSetting.showComicScrollReadTip && localSetting.readMode == "scroll") {
-                Tip(readMode = localSetting.readMode)
-                TipCloseButton(
-                    modifier = Modifier.align(
-                        if (localSetting.readMode == "scroll") Alignment.CenterEnd else Alignment.BottomCenter
-                    ).let {
-                        if (localSetting.readMode == "scroll") {
-                            it.padding(end = 40.dp)
-                        } else {
-                            it.padding(bottom = 40.dp)
+                    onOpenChapters = {
+                        if (readableChapters.isNotEmpty()) {
+                            activeDialog = ReadPanelDialog.Chapter
                         }
                     },
-                    onClick = {
-                        if (localSetting.readMode == "scroll") {
-                            localSettingManager.closeShowComicScrollReadTip()
-                        } else {
-                            localSettingManager.closeShowComicPageReadTip()
-                        }
-                    }
+                    onOpenReadingMode = { showSettings = true },
+                    onOpenBrightness = { showSettings = true },
+                    onOpenSettings = { showSettings = true },
+                    onResetZoom = { zoomState.reset() },
                 )
             }
         }
+        if (loading || size <= 0) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(12.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = ReaderBarColor,
+                contentColor = ReaderBarContentColor,
+            ) {
+                IconButton(onClick = { mainNavController.popBackStack() }) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "退出阅读",
+                    )
+                }
+            }
+        }
+    }
+
+    if (showSettings) {
+        ReaderSettingsSheet(
+            readMode = readMode,
+            readerBackground = localSetting.readerBackground,
+            brightnessPercent = brightnessPercent,
+            brightnessOverridden = brightnessOverride > 0,
+            showTapZones = localSetting.readerShowTapZones,
+            doubleTapZoomEnabled = localSetting.readerDoubleTapZoomEnabled,
+            showPageNumber = localSetting.readerShowPageNumber,
+            volumeKeyPageTurningEnabled = localSetting.volumeKeyPageTurningEnabled,
+            onReadModeChange = localSettingManager::updateReadMode,
+            onBackgroundChange = localSettingManager::updateReaderBackground,
+            onBrightnessChange = { brightnessOverride = it.coerceIn(1, 100) },
+            onRestoreBrightness = { brightnessOverride = 0 },
+            onShowTapZonesChange = localSettingManager::updateReaderShowTapZones,
+            onDoubleTapZoomChange = localSettingManager::updateReaderDoubleTapZoomEnabled,
+            onShowPageNumberChange = localSettingManager::updateReaderShowPageNumber,
+            onVolumeKeyPageTurningChange = localSettingManager::updateVolumeKeyPageTurningEnabled,
+            onDismiss = { showSettings = false },
+        )
     }
 
     when (activeDialog) {
@@ -477,7 +568,7 @@ fun ComicReadScreen(
         ReadPanelDialog.Chapter -> {
             if (readableChapters.isNotEmpty()) {
                 ChapterPickerDialog(
-                    title = "跳转章节",
+                    title = "章节列表",
                     chapters = readableChapters,
                     currentChapterId = comicId,
                     readChapterIds = readChapterIds,
@@ -590,167 +681,6 @@ private fun ChapterCachePickerDialog(
             }
         }
     )
-}
-
-@Composable
-private fun ReadSideBar(
-    comic: Comic?,
-    localOnly: Boolean,
-    chapterEnabled: Boolean,
-    onToggleCollect: () -> Unit,
-    onCache: () -> Unit,
-    onComment: () -> Unit,
-    onChapterJump: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.shadow(14.dp, RoundedCornerShape(28.dp)),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
-        tonalElevation = 10.dp,
-        shadowElevation = 10.dp,
-        shape = RoundedCornerShape(28.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .width(82.dp)
-                .padding(vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            ReadSideBarAction(
-                icon = if (comic?.isCollect == true) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                label = "收藏",
-                enabled = !localOnly && comic != null,
-                onClick = onToggleCollect
-            )
-            ReadSideBarAction(
-                icon = Icons.Default.Download,
-                label = "缓存",
-                enabled = !localOnly && comic != null,
-                onClick = onCache
-            )
-            if (!localOnly) {
-                ReadSideBarAction(
-                    icon = Icons.AutoMirrored.Outlined.Message,
-                    label = "评论",
-                    enabled = comic != null,
-                    onClick = onComment
-                )
-            }
-            ReadChapterSideBarAction(
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                label = "章节",
-                enabled = chapterEnabled,
-                onClick = onChapterJump
-            )
-        }
-    }
-}
-
-@Composable
-private fun ReaderExitButton(
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.9f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 6.dp,
-        shadowElevation = 6.dp
-    ) {
-        IconButton(onClick = onClick) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "退出阅读"
-            )
-        }
-    }
-}
-
-@Composable
-private fun ReadSideBarAction(
-    icon: ImageVector,
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    val contentColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurface
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 9.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            modifier = Modifier.size(22.dp),
-            tint = contentColor
-        )
-        Text(
-            text = label,
-            color = contentColor,
-            fontSize = 11.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
-}
-
-@Composable
-private fun ReadChapterSideBarAction(
-    icon: ImageVector,
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    val containerColor = if (enabled) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-    val contentColor = if (enabled) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-    }
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 7.dp, vertical = 4.dp)
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
-        color = containerColor,
-        tonalElevation = if (enabled) 3.dp else 0.dp
-    ) {
-        Column(
-            modifier = Modifier.padding(vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                modifier = Modifier.size(23.dp),
-                tint = contentColor
-            )
-            Text(
-                text = label,
-                color = contentColor,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
 }
 
 @Composable
