@@ -14,6 +14,40 @@ const val CACHE_INTEGRITY_CHECK_FULL = "full"
 const val COVER_CACHE_MAX_DURATION_HOURS = 72
 const val DEFAULT_COVER_CACHE_DURATION_HOURS = 24
 
+// 阅读模式：从左到右 / 从右到左 / 竖向翻页 / 连续竖向（Webtoon）/ 连续横向
+const val READ_MODE_LTR = "page"
+const val READ_MODE_RTL = "rtl"
+const val READ_MODE_VERTICAL = "vertical"
+const val READ_MODE_WEBTOON = "scroll"
+const val READ_MODE_HORIZONTAL = "horizontal"
+val READ_MODE_LIST = listOf(
+    READ_MODE_LTR,
+    READ_MODE_RTL,
+    READ_MODE_VERTICAL,
+    READ_MODE_WEBTOON,
+    READ_MODE_HORIZONTAL,
+)
+
+/** 兼容旧版本的 "tap" 阅读模式，并把未知取值回退到连续竖向。 */
+fun normalizeReadMode(value: String?): String = when (value) {
+    READ_MODE_RTL -> READ_MODE_RTL
+    READ_MODE_VERTICAL -> READ_MODE_VERTICAL
+    READ_MODE_HORIZONTAL -> READ_MODE_HORIZONTAL
+    READ_MODE_WEBTOON -> READ_MODE_WEBTOON
+    READ_MODE_LTR, "tap" -> READ_MODE_LTR
+    else -> READ_MODE_WEBTOON
+}
+
+// 阅读器背景：黑色 / 白色 / 跟随主题
+const val READER_BACKGROUND_BLACK = "black"
+const val READER_BACKGROUND_WHITE = "white"
+const val READER_BACKGROUND_THEME = "theme"
+val READER_BACKGROUND_LIST = listOf(
+    READER_BACKGROUND_BLACK,
+    READER_BACKGROUND_WHITE,
+    READER_BACKGROUND_THEME,
+)
+
 data class BlockedTagTemplate(
     val name: String = "",
     val tagList: List<String> = listOf(),
@@ -62,10 +96,16 @@ data class LocalSetting(
     ),
     // 阅读页预先加载的图片张数
     val prefetchCount: Int = 3,
-    // scroll || page || tap
-    val readMode: String = "scroll",
-    // default || side
-    val readTapMode: String = "default",
+    // 阅读模式：page 从左到右 | rtl 从右到左 | vertical 竖向翻页 | scroll 连续竖向 | horizontal 连续横向
+    val readMode: String = READ_MODE_WEBTOON,
+    // 阅读器背景色：black | white | theme
+    val readerBackground: String = READER_BACKGROUND_BLACK,
+    // 工具栏显示时叠加点按区域提示
+    val readerShowTapZones: Boolean = false,
+    // 双击页面中央缩放
+    val readerDoubleTapZoomEnabled: Boolean = true,
+    // 工具栏隐藏时在底部显示页码
+    val readerShowPageNumber: Boolean = true,
     // 漫画卡片副标题：关闭时显示作者，开启时显示 JM 漫画编号
     val showComicIdAsSubtitle: Boolean = false,
     // 记住上次打开的章节和阅读页，关闭后每次从选定章节第一页开始
@@ -88,8 +128,6 @@ data class LocalSetting(
     val woodenFishVibrationEnabled: Boolean = true,
     // 应用锁通过后是否展示首页预加载过渡。
     val splashLoadingEnabled: Boolean = true,
-    val showComicScrollReadTip: Boolean = true,
-    val showComicPageReadTip: Boolean = true,
     val showComicCacheNotification: Boolean = true,
     val showComicCacheNotificationName: Boolean = true,
     // 缓存路径迁移到后台后是否显示持续进度通知。

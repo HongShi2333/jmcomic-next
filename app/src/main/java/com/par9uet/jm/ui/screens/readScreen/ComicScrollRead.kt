@@ -1,84 +1,66 @@
 package com.par9uet.jm.ui.screens.readScreen
 
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import com.par9uet.jm.data.models.ComicPicImageState
 import com.par9uet.jm.data.models.ImageResultState
-import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.ui.components.ComicPicImage
 import com.par9uet.jm.ui.viewModel.ComicReadViewModel
 import com.par9uet.jm.utils.log
-import org.koin.compose.getKoin
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.map
-import org.koin.androidx.compose.koinViewModel
 import kotlinx.coroutines.launch
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(FlowPreview::class, ExperimentalMaterial3Api::class)
 @Composable
-fun ComicScrollRead(
-    lazyListState: LazyListState,
-    pagerState: PagerState,
+internal fun ComicContinuousRead(
+    horizontal: Boolean,
+    initialIndex: Int,
     targetIndex: Int,
     zoomState: ReaderZoomState,
     comicReadViewModel: ComicReadViewModel = koinViewModel(),
-    localSettingManager: LocalSettingManager = getKoin().get(),
-    onUpdateSliderValue: (value: Float) -> Unit
+    doubleTapZoomEnabled: Boolean = true,
+    onIndexChange: (Int) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
     val comicPicState by comicReadViewModel.comicPicState.collectAsState()
-    val localSetting by localSettingManager.localSettingState.collectAsState()
-    val list = comicPicState.data ?: listOf()
+    val list = comicPicState.data ?: emptyList()
     val context = LocalContext.current
-    val latestOnUpdateSliderValue = rememberUpdatedState(onUpdateSliderValue)
-
-    fun scrollToCurrentPage() {
-        if (list.isEmpty()) return
-        val target = comicReadViewModel.currentIndexState.intValue
-            .coerceIn(0, list.lastIndex)
-        coroutineScope.launch {
-            lazyListState.scrollToItem(target)
-            pagerState.scrollToPage(target)
-            latestOnUpdateSliderValue.value(target.toFloat())
-        }
-    }
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = initialIndex.coerceAtLeast(0)
+    )
 
     LaunchedEffect(targetIndex, list.size) {
         if (list.isEmpty()) return@LaunchedEffect
         val target = targetIndex.coerceIn(0, list.lastIndex)
-        if (lazyListState.firstVisibleItemIndex != target) {
-            lazyListState.scrollToItem(target)
-            pagerState.scrollToPage(target)
+        if (listState.firstVisibleItemIndex != target) {
+            listState.scrollToItem(target)
         }
     }
 
-    LaunchedEffect(lazyListState) {
+    LaunchedEffect(listState) {
         launch {
-            snapshotFlow { lazyListState.isScrollInProgress }
+            snapshotFlow { listState.isScrollInProgress }
                 .filter { it }
                 .collect {
                     comicReadViewModel.hideToolBar()
@@ -86,7 +68,7 @@ fun ComicScrollRead(
         }
         launch {
             snapshotFlow {
-                lazyListState.layoutInfo.visibleItemsInfo
+                listState.layoutInfo.visibleItemsInfo
                     .takeIf { it.isNotEmpty() }
                     ?.let { it.first().index to it.last().index }
             }
@@ -98,107 +80,95 @@ fun ComicScrollRead(
                 }
         }
         launch {
-            snapshotFlow {
-                // Read both values so Compose emits while the current item is moving
-                // and when the next manga page becomes the first visible item.
-                lazyListState.firstVisibleItemIndex to
-                    lazyListState.firstVisibleItemScrollOffset
-            }
-                .map { (index, _) -> index }
+            snapshotFlow { listState.firstVisibleItemIndex }
                 .distinctUntilChanged()
                 .collect { visibleIndex ->
+                    if (list.isEmpty()) return@collect
                     val pageIndex = visibleIndex.coerceIn(0, list.lastIndex)
-                    log("visible page index currentIndexState = ${comicReadViewModel.currentIndexState.intValue} it = $pageIndex")
-                    // The parent owns the observable page state used by ToolsBar.
-                    latestOnUpdateSliderValue.value(pageIndex.toFloat())
+                    log("visible page index = $pageIndex")
+                    onIndexChange(pageIndex)
                     comicReadViewModel.decodeIndex(pageIndex, context)
                 }
         }
     }
 
+    fun jumpPage(delta: Int) {
+        if (list.isEmpty()) return
+        val target = (listState.firstVisibleItemIndex + delta).coerceIn(0, list.lastIndex)
+        if (target == listState.firstVisibleItemIndex) return
+        coroutineScope.launch {
+            listState.animateScrollToItem(target)
+        }
+    }
+
+    val scrollModifier = if (horizontal) {
+        Modifier.fillMaxSize()
+    } else {
+        Modifier
+            .fillMaxSize()
+            .readerZoomable(zoomState, enableVerticalPan = false) {
+                listState.dispatchRawDelta(it)
+            }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .pointerInput(localSetting.readTapMode) {
-                awaitPointerEventScope {
-                    while (true) {
-                        // 1. 在 Initial 阶段观察按下，不消耗事件，确保 Pager 能收到
-                        val down =
-                            awaitFirstDown(
-                                requireUnconsumed = true,
-                                pass = PointerEventPass.Final
-                            )
-                        // 2. 等待抬起
-                        val up = waitForUpOrCancellation(pass = PointerEventPass.Final)
-                        // 3. 判定逻辑：只有在没被消费（说明不是滑动）且距离很短时触发
-                        if (up != null && !up.isConsumed) {
-                            val distance = (up.position - down.position).getDistance()
-                            if (distance < 10.dp.toPx()) {
-                                // --- 获取点击位置 ---
-                                val screenHeight = size.height
-                                val screenWidth = size.width
-                                val clickY = up.position.y
-                                val clickX = up.position.x
-
-                                when {
-                                    localSetting.readTapMode == "side" && clickX < screenWidth / 3 -> {
-                                        comicReadViewModel.prev(context)
-                                        scrollToCurrentPage()
-                                    }
-
-                                    localSetting.readTapMode == "side" && clickX > screenWidth * 2 / 3 -> {
-                                        comicReadViewModel.next(context)
-                                        scrollToCurrentPage()
-                                    }
-
-                                    localSetting.readTapMode != "side" && clickY < screenHeight / 3 -> {
-                                        comicReadViewModel.prev(context)
-                                        scrollToCurrentPage()
-                                    }
-
-                                    localSetting.readTapMode != "side" && clickY > screenHeight * 2 / 3 -> {
-                                        comicReadViewModel.next(context)
-                                        scrollToCurrentPage()
-                                    }
-
-                                    else -> {
-                                        comicReadViewModel.triggerToolBar()
-                                    }
-                                }
-                            }
-                        }
+            .readerTapZones(
+                rightToLeft = false,
+                onPrevious = { jumpPage(-1) },
+                onNext = { jumpPage(1) },
+                onMenu = { comicReadViewModel.triggerToolBar() },
+                onDoubleTapCenter = if (!horizontal && doubleTapZoomEnabled) {
+                    { centroid -> zoomState.toggleZoom(centroid) }
+                } else {
+                    null
+                },
+            )
+    ) {
+        if (horizontal) {
+            LazyRow(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                itemsIndexed(list, key = { _, item -> "${item.comicId}_${item.originSrc}" }) { _, item ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .aspectRatio(item.aspectRatioOrFallback())
+                    ) {
+                        ComicPicImage(
+                            comicPicImageState = item,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
                 }
             }
-    ) {
-        LazyColumn(
-            state = lazyListState,
-            userScrollEnabled = !zoomState.isZoomed,
-            modifier = Modifier
-                .fillMaxSize()
-                .readerZoomable(zoomState, enableVerticalPan = false) {
-                    lazyListState.dispatchRawDelta(it)
-                }
-        ) {
-            itemsIndexed(list, key = { _, item ->
-                "${item.comicId}_${item.originSrc}"
-            }) { page, item ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(
-                            when (val state = item.imageResultState) {
-                                is ImageResultState.Success -> state.decodeImageAspectRatio
-                                else -> 9f / 16
-                            }
+        } else {
+            LazyColumn(
+                state = listState,
+                userScrollEnabled = !zoomState.isZoomed,
+                modifier = scrollModifier,
+            ) {
+                itemsIndexed(list, key = { _, item -> "${item.comicId}_${item.originSrc}" }) { _, item ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(item.aspectRatioOrFallback())
+                    ) {
+                        ComicPicImage(
+                            comicPicImageState = item,
+                            modifier = Modifier.fillMaxSize(),
                         )
-                ) {
-                    ComicPicImage(
-                        comicPicImageState = item,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    }
                 }
             }
         }
     }
 }
+
+private fun ComicPicImageState.aspectRatioOrFallback(): Float =
+    when (val state = imageResultState) {
+        is ImageResultState.Success -> state.decodeImageAspectRatio
+        else -> 9f / 16f
+    }

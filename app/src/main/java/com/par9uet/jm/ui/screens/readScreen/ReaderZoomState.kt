@@ -118,6 +118,25 @@ class ReaderZoomState {
         verticalFling?.stop()
     }
 
+    /** 以 [centroid] 为焦点直接缩放到目标倍率，用于双击缩放。 */
+    fun zoomTo(targetScale: Float, centroid: Offset) {
+        if (!targetScale.isFinite() || !centroid.x.isFinite() || !centroid.y.isFinite()) return
+        cancelFling()
+        val next = targetScale.coerceIn(1f, 4f)
+        if (next <= 1.01f) {
+            scale = 1f
+            offset = Offset.Zero
+            return
+        }
+        val focus = centroid - Offset(viewportWidth / 2f, viewportHeight / 2f)
+        scale = next
+        offset = clampOffset(Offset(-focus.x * (next - 1f), -focus.y * (next - 1f)), next)
+    }
+
+    fun toggleZoom(centroid: Offset, targetScale: Float = 2.5f) {
+        if (isZoomed) reset() else zoomTo(targetScale, centroid)
+    }
+
     suspend fun fling(
         velocity: Offset,
         decay: DecayAnimationSpec<Float>,
