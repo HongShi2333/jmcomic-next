@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -74,6 +75,7 @@ import com.par9uet.jm.data.models.ComicChapter
 import com.par9uet.jm.store.DownloadManager
 import com.par9uet.jm.store.LocalSettingManager
 import com.par9uet.jm.store.ReadHistoryManager
+import com.par9uet.jm.store.ToastManager
 import com.par9uet.jm.store.UserManager
 import com.par9uet.jm.ui.screens.LocalMainNavController
 import com.par9uet.jm.ui.components.adaptiveDialogMaxHeight
@@ -92,6 +94,7 @@ fun ComicReadScreen(
     readHistoryManager: ReadHistoryManager = getKoin().get(),
     downloadManager: DownloadManager = getKoin().get(),
     userManager: UserManager = getKoin().get(),
+    toastManager: ToastManager = getKoin().get(),
 ) {
     val context = LocalContext.current
     val mainNavController = LocalMainNavController.current
@@ -127,6 +130,9 @@ fun ComicReadScreen(
     var targetIndex by remember { mutableIntStateOf(initialReaderIndex) }
     var activeDialog by remember { mutableStateOf<ReadPanelDialog?>(null) }
     var selectedCacheChapterIds by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var autoPageTurnRunning by rememberSaveable { mutableStateOf(false) }
+    var autoPageTurnProgress by remember { mutableFloatStateOf(1f) }
+    var showAutoPageTurnIntervalDialog by remember { mutableStateOf(false) }
     var loadedComicId by comicReadViewModel.loadedComicId
     val readHistoryComicId by comicReadViewModel.readHistoryComicId
     val readChapterIds = remember(
@@ -189,6 +195,47 @@ fun ComicReadScreen(
         comicReadViewModel.decodeIndex(target, context)
         comicReadViewModel.showToolBar()
     }
+
+    // 自动翻页只需要“下一页”：与音量键翻页共用同一套索引状态，不额外弹工具栏。
+    fun toggleAutoPageTurn() {
+        if (autoPageTurnRunning) {
+            autoPageTurnRunning = false
+            return
+        }
+        if (size <= 0 || currentIndexState >= size - 1) {
+            toastManager.showAsync("已是最后一页")
+            return
+        }
+        autoPageTurnRunning = true
+        // 计时器自己推进翻页，工具栏留着只会挡住画面
+        comicReadViewModel.hideToolBar()
+    }
+
+    fun advanceAutoPage(): Boolean {
+        val target = currentIndexState + 1
+        if (size <= 0 || target > size - 1) return false
+        zoomState.reset()
+        currentIndexState = target
+        targetIndex = target
+        comicReadViewModel.decodeIndex(target, context)
+        return true
+    }
+
+    AutoPageTurnEffect(
+        running = autoPageTurnRunning,
+        intervalMs = localSetting.autoPageTurnIntervalMs,
+        pageIndex = currentIndexState,
+        pageCount = size,
+        isBusy = {
+            pagerState.isScrollInProgress || lazyListState.isScrollInProgress || zoomState.isZoomed
+        },
+        onAdvance = { advanceAutoPage() },
+        onFinish = {
+            autoPageTurnRunning = false
+            toastManager.showAsync("已是最后一页")
+        },
+        onProgress = { autoPageTurnProgress = it }
+    )
 
     val volumePageTurnHandler = rememberUpdatedState<(Boolean) -> Unit> { isVolumeUp ->
         val currentIndex = comicReadViewModel.currentIndexState.intValue
@@ -346,6 +393,12 @@ fun ComicReadScreen(
                     comic = comic,
                     localOnly = localOnly,
                     chapterEnabled = readableChapters.isNotEmpty(),
+                    autoPageTurnRunning = autoPageTurnRunning,
+                    autoPageTurnProgress = { autoPageTurnProgress },
+                    onToggleAutoPageTurn = { toggleAutoPageTurn() },
+                    onAutoPageTurnInterval = {
+                        showAutoPageTurnIntervalDialog = true
+                    },
                     onToggleCollect = {
                         if (!isLogin) {
                             mainNavController.navigate("login")
@@ -492,6 +545,17 @@ fun ComicReadScreen(
 
         null -> Unit
     }
+
+    if (showAutoPageTurnIntervalDialog) {
+        AutoPageTurnIntervalDialog(
+            intervalMs = localSetting.autoPageTurnIntervalMs,
+            onDismiss = { showAutoPageTurnIntervalDialog = false },
+            onConfirm = { intervalMs ->
+                localSettingManager.updateAutoPageTurnIntervalMs(intervalMs)
+                showAutoPageTurnIntervalDialog = false
+            }
+        )
+    }
 }
 
 private enum class ReadPanelDialog {
@@ -597,6 +661,10 @@ private fun ReadSideBar(
     comic: Comic?,
     localOnly: Boolean,
     chapterEnabled: Boolean,
+    autoPageTurnRunning: Boolean,
+    autoPageTurnProgress: () -> Float,
+    onToggleAutoPageTurn: () -> Unit,
+    onAutoPageTurnInterval: () -> Unit,
     onToggleCollect: () -> Unit,
     onCache: () -> Unit,
     onComment: () -> Unit,
@@ -636,6 +704,12 @@ private fun ReadSideBar(
                     onClick = onComment
                 )
             }
+            ReadAutoPageTurnAction(
+                running = autoPageTurnRunning,
+                progress = autoPageTurnProgress,
+                onClick = onToggleAutoPageTurn,
+                onLongClick = onAutoPageTurnInterval
+            )
             ReadChapterSideBarAction(
                 icon = Icons.AutoMirrored.Filled.MenuBook,
                 label = "章节",

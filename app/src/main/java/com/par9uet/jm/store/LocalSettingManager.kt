@@ -5,6 +5,9 @@ import com.par9uet.jm.data.models.AiChatModel
 import com.par9uet.jm.data.models.COVER_CACHE_MAX_DURATION_HOURS
 import com.par9uet.jm.data.models.LauncherDisguise
 import com.par9uet.jm.data.models.LocalSetting
+import com.par9uet.jm.data.models.AUTO_PAGE_TURN_MAX_INTERVAL_MS
+import com.par9uet.jm.data.models.AUTO_PAGE_TURN_MIN_INTERVAL_MS
+import com.par9uet.jm.data.models.DEFAULT_AUTO_PAGE_TURN_INTERVAL_MS
 import com.par9uet.jm.storage.LocalSettingStorage
 import com.par9uet.jm.task.AppInitTask
 import com.par9uet.jm.task.AppTaskInfo
@@ -104,6 +107,15 @@ class LocalSettingManager(
 
     fun updateVolumeKeyPageTurningEnabled(enabled: Boolean) =
         updateSetting { it.copy(volumeKeyPageTurningEnabled = enabled) }
+
+    fun updateAutoPageTurnIntervalMs(intervalMs: Int) = updateSetting {
+        it.copy(
+            autoPageTurnIntervalMs = intervalMs.coerceIn(
+                AUTO_PAGE_TURN_MIN_INTERVAL_MS,
+                AUTO_PAGE_TURN_MAX_INTERVAL_MS
+            )
+        )
+    }
 
     fun updateReaderBrightnessEnabled(enabled: Boolean) =
         updateSetting { it.copy(readerBrightnessEnabled = enabled) }
@@ -399,6 +411,10 @@ class LocalSettingManager(
                 appLockDuressPassword = current.appLockDuressPassword,
                 appLockDuressPattern = current.appLockDuressPattern,
                 downloadTreeUri = if (includeDownloadPath) setting.downloadTreeUri else current.downloadTreeUri,
+                // 旧版本备份没有这个字段，Gson 会给出 0，这里补回默认值而不是留成越界值
+                autoPageTurnIntervalMs = setting.autoPageTurnIntervalMs.takeIf {
+                    it in AUTO_PAGE_TURN_MIN_INTERVAL_MS..AUTO_PAGE_TURN_MAX_INTERVAL_MS
+                } ?: DEFAULT_AUTO_PAGE_TURN_INTERVAL_MS,
             )
         }
         val newLauncherDisguise = _localSettingState.value.launcherDisguise
