@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Recommend
 import androidx.compose.material.icons.rounded.Source
@@ -119,6 +120,8 @@ import com.par9uet.jm.worker.CACHE_MIGRATION_WORK_NAME
 import com.par9uet.jm.cache.ensureDownloadTreeHiddenFromGallery
 import com.par9uet.jm.worker.CacheMigrationWorker
 import com.par9uet.jm.ui.screens.readScreen.ReaderBrightnessControls
+import com.par9uet.jm.ui.screens.readScreen.AutoPageTurnIntervalDialog
+import com.par9uet.jm.ui.screens.readScreen.autoPageTurnIntervalLabel
 
 private sealed class SettingType {
     object ComicApiSource : SettingType()
@@ -177,6 +180,7 @@ fun LocalSettingScreen(
     var isOpenSettingSelectDialog by remember { mutableStateOf(false) }
     var showHomeExcludedTagsDialog by remember { mutableStateOf(false) }
     var showCachePathDialog by remember { mutableStateOf(false) }
+    var showAutoPageTurnIntervalDialog by remember { mutableStateOf(false) }
     val workManager = remember(context) { WorkManager.getInstance(context) }
     var migrationWorkList by remember { mutableStateOf<List<WorkInfo>>(emptyList()) }
     DisposableEffect(workManager) {
@@ -417,6 +421,13 @@ fun LocalSettingScreen(
                         onCheckedChange = localSettingManager::updateVolumeKeyPageTurningEnabled
                     )
                     SettingsRow(
+                        icon = Icons.Rounded.PlayArrow,
+                        title = "自动翻页间隔",
+                        value = autoPageTurnIntervalLabel(localSetting.autoPageTurnIntervalMs),
+                    ) {
+                        showAutoPageTurnIntervalDialog = true
+                    }
+                    SettingsRow(
                         icon = Icons.Rounded.Image,
                         title = "封面缓存时长",
                         value = coverCacheDurationText(localSetting.coverCacheDurationHours),
@@ -508,6 +519,18 @@ fun LocalSettingScreen(
                 onDismiss = { isOpenSettingSelectDialog = false }
             )
         }
+
+        if (showAutoPageTurnIntervalDialog) {
+            AutoPageTurnIntervalDialog(
+                intervalMs = localSetting.autoPageTurnIntervalMs,
+                onDismiss = { showAutoPageTurnIntervalDialog = false },
+                onConfirm = { intervalMs ->
+                    localSettingManager.updateAutoPageTurnIntervalMs(intervalMs)
+                    showAutoPageTurnIntervalDialog = false
+                }
+            )
+        }
+
         if (showHomeExcludedTagsDialog) {
             HomeExcludedTagsDialog(
                 tags = localSetting.homeExcludedTags,

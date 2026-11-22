@@ -13,6 +13,10 @@ const val CACHE_INTEGRITY_CHECK_PARTIAL = "partial"
 const val CACHE_INTEGRITY_CHECK_FULL = "full"
 const val COVER_CACHE_MAX_DURATION_HOURS = 72
 const val DEFAULT_COVER_CACHE_DURATION_HOURS = 24
+// 自动翻页间隔：单位毫秒，200 ms ~ 60 s
+const val AUTO_PAGE_TURN_MIN_INTERVAL_MS = 200
+const val AUTO_PAGE_TURN_MAX_INTERVAL_MS = 60_000
+const val DEFAULT_AUTO_PAGE_TURN_INTERVAL_MS = 3_000
 
 data class BlockedTagTemplate(
     val name: String = "",
@@ -74,6 +78,8 @@ data class LocalSetting(
     val chapterReadingMemoryEnabled: Boolean = true,
     // 阅读页是否使用实体音量键翻页，默认关闭
     val volumeKeyPageTurningEnabled: Boolean = false,
+    // 自动翻页间隔（毫秒）：仅作用于阅读页手动开启的自动翻页
+    val autoPageTurnIntervalMs: Int = DEFAULT_AUTO_PAGE_TURN_INTERVAL_MS,
     val readerBrightnessEnabled: Boolean = false,
     // Opt in: a long press only opens a save confirmation, never writes immediately.
     val readerLongPressSaveEnabled: Boolean = false,

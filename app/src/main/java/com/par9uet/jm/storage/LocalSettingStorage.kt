@@ -8,6 +8,9 @@ import com.par9uet.jm.data.models.APP_LOCK_METHOD_BIOMETRIC
 import com.par9uet.jm.data.models.APP_LOCK_RULE_ANY
 import com.par9uet.jm.data.models.APP_LOCK_RULE_REQUIRED
 import com.par9uet.jm.data.models.AiChatModel
+import com.par9uet.jm.data.models.AUTO_PAGE_TURN_MAX_INTERVAL_MS
+import com.par9uet.jm.data.models.AUTO_PAGE_TURN_MIN_INTERVAL_MS
+import com.par9uet.jm.data.models.DEFAULT_AUTO_PAGE_TURN_INTERVAL_MS
 import com.par9uet.jm.data.models.BlockedTagTemplate
 import com.par9uet.jm.data.models.COLOR_PALETTE_PRESET_DEFAULT
 import com.par9uet.jm.data.models.COMIC_API_SOURCE_BUILTIN
@@ -236,6 +239,14 @@ class LocalSettingStorage(
                         saved.volumeKeyPageTurningEnabled
                     } else {
                         false
+                    },
+                    autoPageTurnIntervalMs = if (savedJson.hasField("autoPageTurnIntervalMs")) {
+                        saved.autoPageTurnIntervalMs.coerceIn(
+                            AUTO_PAGE_TURN_MIN_INTERVAL_MS,
+                            AUTO_PAGE_TURN_MAX_INTERVAL_MS
+                        )
+                    } else {
+                        DEFAULT_AUTO_PAGE_TURN_INTERVAL_MS
                     },
                     coverCacheDurationHours = if (savedJson.hasField("coverCacheDurationHours")) {
                         saved.coverCacheDurationHours.coerceIn(0, COVER_CACHE_MAX_DURATION_HOURS)
